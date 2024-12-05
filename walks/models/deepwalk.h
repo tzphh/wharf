@@ -78,8 +78,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             */
             types::Vertex propose_vertex(const types::State& state) final
             {
-                auto neighbors = this->snapshot->neighbors(state.first);
-                auto vertex    = std::get<0>(neighbors)[config::random.irand(std::get<1>(neighbors))];
+                auto neighbors = this->snapshot->neighbors(state.first);   // 三元组 (邻居数组, 邻居数, 是否需要释放内存)
+                // auto vertex    = std::get<0>(neighbors)[config::random.irand(std::get<1>(neighbors))];  // todo: check 度数是否为0
+                // degree为0时下一跳为源顶点
+                auto vertex    = std::get<1>(neighbors) == 0 ? state.first : std::get<0>(neighbors)[config::random.irand(std::get<1>(neighbors))];  
+                
 
                 if (std::get<2>(neighbors)) pbbs::free_array(std::get<0>(neighbors));
 

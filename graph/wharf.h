@@ -27,7 +27,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
   {
   public:
 	using Graph = aug_map<dygrl::Vertex>;
-	std::atomic<unsigned long> number_of_sampled_vertices;
+	std::atomic<unsigned long> number_of_sampled_vertices;  // 原子变量
 //            int number_of_sampled_vertices;
 
 	/**
@@ -79,7 +79,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		// Initialize the MAVs vector. 1 MAV for each batch
 //				MAVS = libcuckoo::cuckoohash_map<int, types::MapAffectedVertices>();
 		for (auto i = 0; i < 50; i++) // TODO: hached initial size of MAVS 50
-			MAVS2.push_back(types::MapAffectedVertices());
+			MAVS2.push_back(types::MapAffectedVertices());     // 预分配为50, 后续考虑不写死
 
 		number_of_sampled_vertices = 0;
 
@@ -99,10 +99,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 	/**
 	 * @brief Number of vertices in a graph.
-	 *
+	 * 
 	 * @return - the number of vertices in a graph
 	 */
-	[[nodiscard]] auto number_of_vertices() const
+	[[nodiscard]] auto number_of_vertices() const    // [[nodiscard]] 表示调用该函数返回的值不能被忽略 C++17特性
 	{
 		size_t n = this->graph_tree.size();
 		auto last_vertex = this->graph_tree.select(n - 1);
@@ -251,7 +251,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	}
 
 	/**
-	* @brief Creates initial set of random walks.
+	* @brief Creates initial set of random walks.  
 	*/
 	void generate_initial_random_walks()
 	{
@@ -259,10 +259,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		auto total_vertices    = this->number_of_vertices();
 		auto walks_to_generate = total_vertices * config::walks_per_vertex;
 		cout << "GENERATE " << walks_to_generate << " walks." << endl;
-		auto cuckoo            = libcuckoo::cuckoohash_map<types::Vertex, std::vector<types::Vertex>>(total_vertices);
+		auto cuckoo            = libcuckoo::cuckoohash_map<types::Vertex, std::vector<types::Vertex>>(total_vertices);  // 并发哈希表
 
-		using VertexStruct  = std::pair<types::Vertex, VertexEntry>;
-		auto vertices       = pbbs::sequence<VertexStruct>(total_vertices);
+		using VertexStruct  = std::pair<types::Vertex, VertexEntry>;   // v_id -> compressed edges, compressed walks, and sampler manager
+		auto vertices       = pbbs::sequence<VertexStruct>(total_vertices);  // 理解为VertexStruct的数组就好
 
 		RandomWalkModel* model;
 		switch (config::random_walk_model)
@@ -284,10 +284,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  if (graph[walk_id % total_vertices].degree == 0)
 		  {
 //                        types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id*config::walk_length,std::numeric_limits<uint32_t>::max() - 1});
-			  types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});
+			  types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});   // 编码
 			  cuckoo.insert(walk_id % total_vertices, std::vector<types::Vertex>());
 			  cuckoo.update_fn(walk_id % total_vertices, [&](auto& vector) {
-				vector.push_back(hash);
+				vector.push_back(hash);  // 添加hash值
 			  });
 
 			  return;
@@ -296,17 +296,17 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  auto random = config::random; // By default random initialization
 		  if (config::deterministic_mode)
 			  random = utility::Random(walk_id / total_vertices);
-		  types::State state  = model->initial_state(walk_id % total_vertices);
+		  types::State state  = model->initial_state(walk_id % total_vertices);   // std::pair<Vertex, Vertex>
 
 		  for(types::Position position = 0; position < config::walk_length; position++)
 		  {
 			  if (!graph[state.first].samplers->contains(state.second))
-				  graph[state.first].samplers->insert(state.second, MetropolisHastingsSampler(state, model));
+				  graph[state.first].samplers->insert(state.second , MetropolisHastingsSampler(state, model)); // 插入采样器
 
 			  auto new_state = graph[state.first].samplers->find(state.second).sample(state, model);
 			  // Bypass the sampling to choose a neighbor "randomly" for deterministic walks
 			  if (config::deterministic_mode)
-				  new_state = model->new_state(state, graph[state.first].neighbors[random.irand(graph[state.first].degree)]);
+				  new_state = model->new_state(state, graph[state.first].neighbors[random.irand(graph[state.first].degree)]); // 随机选择邻居
 			  // ---------------------------------------------------------------------------
 
 //                        // todo: check the neighbours here
@@ -319,8 +319,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 //                        }
 
 			  if (!cuckoo.contains(state.first))
-				  cuckoo.insert(state.first, std::vector<types::Vertex>());
-
+				  cuckoo.insert(state.first, std::vector<types::Vertex>());        // 插入到并发哈希表
+				
 			  types::PairedTriplet hash = (position != config::walk_length - 1) ?
 			                              pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, new_state.first}) :
 			                              pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, state.first}); // assign the current as next if EOW
@@ -353,17 +353,20 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 			  for(auto index = 0; index < triplets.size(); index++)
 				  sequence[index] = triplets[index];
-
-			  pbbs::sample_sort_inplace(pbbs::make_range(sequence.begin(), sequence.end()), std::less<>());
+			  
+			  // 游走序列进行排序
+			  pbbs::sample_sort_inplace(pbbs::make_range(sequence.begin(), sequence.end()), std::less<>()); 
 			  // assume the initial random walks are created at batch 0
+			  // todo: 理清CompressedWalks是啥
 			  vector<dygrl::CompressedWalks> vec_compwalks;
 			  vec_compwalks.push_back(dygrl::CompressedWalks(sequence, vertex, 666, 666, /*next_min[vertex], next_max[vertex],*/ 0)); // this is created at time 0
 			  vertices[vertex] = std::make_pair(vertex, VertexEntry(types::CompressedEdges(), vec_compwalks, new dygrl::SamplerManager(0)));
 		  }
 		  else
 		  {
-			  vector<dygrl::CompressedWalks> vec_compwalks; vec_compwalks.push_back(dygrl::CompressedWalks(0)); // at batch 0
-			  vertices[vertex] = std::make_pair(vertex, VertexEntry(types::CompressedEdges(), vec_compwalks,new dygrl::SamplerManager(0)));
+			  vector<dygrl::CompressedWalks> vec_compwalks; 
+			  vec_compwalks.push_back(dygrl::CompressedWalks(0)); // at batch 0
+			  vertices[vertex] = std::make_pair(vertex, VertexEntry(types::CompressedEdges(), vec_compwalks,new dygrl::SamplerManager(0)));  //初始容量为0
 		  }
 		});
 
@@ -374,7 +377,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 //
 //                std::cout << std::endl;
 
-		auto replace = [&] (const uintV& src, const VertexEntry& x, const VertexEntry& y)
+		// 合并 VertexEntry 对象
+		auto replace = [&] (const uintV& src, const VertexEntry& x, const VertexEntry& y)   
 		{
 //                    auto tree_plus = walk_plus::uniont(x.compressed_walks, y.compressed_walks, src);
 
@@ -543,9 +547,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	*
 	* @param m                  - size of the batch
 	* @param edges              - atch of edges to insert
+	* @param batch_num          - batch number, indicates the batch number
 	* @param sorted             - sort the edges in the batch
 	* @param remove_dups        - removes duplicate edges in the batch
-	* @param nn
+	* @param nn				    - limit the number of neighbors to be considered
 	* @param apply_walk_updates - decides if walk updates will be executed
 	*/
 	pbbs::sequence<types::WalkID> insert_edges_batch(size_t m,
@@ -568,7 +573,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		// 2. Sort the edges in the batch (by source)
 		if (!sorted)
 		{
-			Wharf::sort_edge_batch_by_source(edges, m, nn);
+			Wharf::sort_edge_batch_by_source(edges, m, nn);    // 根据源顶点进行排序
 		}
 
 		// 3. Remove duplicate edges
@@ -578,7 +583,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			auto bool_seq = pbbs::delayed_seq<bool>(edges_original.size(), [&] (size_t i)
 			{
 			  if(get<0>(edges_original[i]) == get<1>(edges_original[i])) return false;
-			  return (i == 0 || edges_original[i] != edges_original[i-1]);
+			  return (i == 0 || edges_original[i] != edges_original[i-1]);   // 源顶点不同，或者为第一个元素，则返回true，表示保留
 			});
 
 			auto E = pbbs::pack(edges_original, bool_seq, fl); // Creates a new pbbs::sequence
@@ -590,17 +595,25 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 		auto E = (edges_deduped) ? pbbs::make_range(edges_deduped, edges_deduped + m) : edges_original;
 
+		// for (size_t i = 0; i < E.size(); i++)
+		// {
+		// 	std::cout << "E[" << i << "] = (" << get<0>(E[i]) << ", " << get<1>(E[i]) << ")" << std::endl;
+		// }
 		// 4. Pack the starts vertices of edges
 		auto start_im = pbbs::delayed_seq<size_t>(m, [&] (size_t i)
 		{
 		  return (i == 0 || (get<0>(E[i]) != get<0>(E[i-1])));
 		});
 
-		auto starts = pbbs::pack_index<size_t>(start_im, fl);
+		auto starts = pbbs::pack_index<size_t>(start_im, fl);   // index下标划分区间
+		// for (size_t i = 0; i < starts.size(); i++)
+		// {
+		// 	std::cout << "starts[" << i << "] = " << starts[i] << std::endl;
+		// }
 		size_t num_starts = starts.size();
 
 		// 5. Build new wharf vertices
-		using KV = std::pair<uintV, VertexEntry>;
+		using KV = std::pair<uintV, VertexEntry>;           // 增量顶点
 
 		// Decides to store Wharf vertices on stack or heap
 		constexpr const size_t stack_size = 20;
@@ -609,20 +622,21 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		if (num_starts > stack_size)
 			new_verts = pbbs::new_array<KV>(num_starts);
 
-		// pack the edges in the form: vertex_id - array of new edges
+		// pack the edges in the form: vertex_id - array of new edges  并行增加新顶点 todo
 		parallel_for(0, num_starts, [&] (size_t i) {
-		  size_t off = starts[i];
-		  size_t deg = ((i == (num_starts-1)) ? m : starts[i+1]) - off;
-		  uintV v = get<0>(E[starts[i]]);
+		  size_t off = starts[i];                                             // 偏移量
+		  size_t deg = ((i == (num_starts-1)) ? m : starts[i+1]) - off;		  // 顶点度
+		  uintV v = get<0>(E[starts[i]]);                                     // source vertex
 
-		  auto S = pbbs::delayed_seq<uintV>(deg, [&] (size_t i) { return get<1>(E[off + i]); });
+		  auto S = pbbs::delayed_seq<uintV>(deg, [&] (size_t i) { return get<1>(E[off + i]); });   // 获取 target vertices, 用于构造
 
-		  vector<dygrl::CompressedWalks> vec_compwalks; vec_compwalks.push_back(dygrl::CompressedWalks(batch_num));
+		  vector<dygrl::CompressedWalks> vec_compwalks; 
+		  vec_compwalks.push_back(dygrl::CompressedWalks(batch_num));        // 初始化batch_num
 //                    new_verts[i] = make_pair(v, VertexEntry(types::CompressedEdges(S, v, fl), dygrl::CompressedWalks(), new dygrl::SamplerManager(0)));
-		  new_verts[i] = make_pair(v, VertexEntry(types::CompressedEdges(S, v, fl), vec_compwalks, new dygrl::SamplerManager(0)));
+		  new_verts[i] = make_pair(v, VertexEntry(types::CompressedEdges(S, v, fl), vec_compwalks, new dygrl::SamplerManager(0)));   // 构造VertexEntry
 		});
 
-		types::MapAffectedVertices rewalk_points = types::MapAffectedVertices();
+		types::MapAffectedVertices rewalk_points = types::MapAffectedVertices();     //  存储需要重新采样的顶点
 
 		auto replace = [&, run_seq] (const intV& v, const VertexEntry& a, const VertexEntry& b)
 		{
@@ -2284,6 +2298,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	/**
 	 * @brief Prints memory footprint details.
 	 */
+#pragma GCC push_options
+#pragma GCC optimize ("O0")
 	void memory_footprint() const
 	{
 		std::cout << std::endl;
@@ -2300,7 +2316,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		size_t walks_bytes      = 0;
 		size_t samplers_bytes   = 0;
 		size_t flat_graph_bytes = 0;
-		auto flat_graph         = this->flatten_vertex_tree();
+		auto flat_graph         = this->flatten_vertex_tree();  // 大小为nverts的序列数组
 
 		// measure size of {min,max} bounds for each walk-tree
 		size_t vnext_min_bytes  = 0;
@@ -2310,9 +2326,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		{
 			flat_graph_bytes += sizeof(flat_graph[i]);
 
-			edges_heads += flat_graph[i].compressed_edges.edge_tree_nodes();
+			edges_heads += flat_graph[i].compressed_edges.edge_tree_nodes();          //  只统计head个数
 			for (auto j = flat_graph[i].compressed_walks.rbegin(); j != flat_graph[i].compressed_walks.rend(); j++)
-				walks_heads += j->edge_tree_nodes();
+				walks_heads += j->edge_tree_nodes();                               // 统计walk树head个数
 //                    walks_heads += flat_graph[i].compressed_walks.edge_tree_nodes();
 
 			edges_bytes += flat_graph[i].compressed_edges.size_in_bytes(i);
@@ -2382,6 +2398,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 		std::cout << std::endl;
 	}
+#pragma GCC pop_options
 
 	/**
 	 * @brief Prints memory pool stats for the underlying lists.
@@ -2459,7 +2476,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			  return std::max(std::get<0>(edges_original[i]), std::get<1>(edges_original[i]));
 			});
 
-			vertex_bits = pbbs::log2_up(pbbs::reduce(max_edge_id, pbbs::maxm<size_t>()));
+			vertex_bits = pbbs::log2_up(pbbs::reduce(max_edge_id, pbbs::maxm<size_t>()));  // 动态推导出nn的值
 			nn = 1 << vertex_bits;
 		}
 

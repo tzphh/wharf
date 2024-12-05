@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "C++ 调试",
+            "type": "cppdbg",
+            "request": "launch",
+            // "program": "/home/tzp/workspace/wharf/build/experiments/memory-footprint", // 可执行文件路径
+            "program": "/home/tzp/workspace/wharf/build/experiments/throughput-latency", // 可执行文件路径
+            "args": [
+                //"-f", "/home/tzp/workspace/wharf/experiments/data/cora/cora.txt"
+                "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.txt"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb", // GDB 路径
+            "setupCommands": [
+                {
+                    "description": "启用 pretty-printing",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            //"preLaunchTask": "build" // 需要一个预定义的任务去编译程序
+        }
+    ]
+}

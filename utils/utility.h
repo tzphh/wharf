@@ -93,6 +93,10 @@ namespace utility
 
         // 3. Sort edges by source
         auto edges_sorted = (directed) ? pbbs::make_range(edges, edges + edges_number) : pbbs::make_range(edges, edges + 2 * edges_number);
+        // for (size_t i = 0; i < edges_sorted.size(); i++)
+        // {
+        //     std::cout << std::get<0>(edges_sorted[i]) << " " << std::get<1>(edges_sorted[i]) << std::endl;
+        // }
         auto node_bits    = pbbs::log2_up(graph_size_pow2);
 
         auto edge_to_long = [graph_size_pow2, node_bits](Edge e) -> size_t {

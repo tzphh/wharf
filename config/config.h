@@ -7,6 +7,7 @@
 #include <types.h>
 #include <globals.h>
 
+// 定时器,import from pbbslib
 auto graph_update_time_on_insert = timer("GraphUpdateTimeOnInsert", false);
 auto walk_update_time_on_insert  = timer("WalkUpdateTimeOnInsert", false);
 auto Walking_new_sampling_time   = timer("WalkInsertTimeFor2Jobs", false);

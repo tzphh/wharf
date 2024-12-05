@@ -31,19 +31,20 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             types::State sample(types::State& state, dygrl::RandomWalkModel* model)
             {
                 // 1. propose new candidate and calculate weights
-                auto candidate_sample = model->propose_vertex(state);
-                float new_weight      = model->weight(state, candidate_sample);
-                float previous_weight = model->weight(state, this->last_sampled_vertex);
+                auto candidate_sample = model->propose_vertex(state);  // 提议新顶点
+                float new_weight = model->weight(state, candidate_sample); // 计算新顶点权重
+                float previous_weight = model->weight(state, this->last_sampled_vertex); // 当前顶点权重
+
 
                 // 2. try to accept the candidate
-                if (this->accept(previous_weight, new_weight))
+                if (this->accept(previous_weight, new_weight))  // 根据权重决定是否接受新顶点
                 {
                     this->last_sampled_vertex = candidate_sample;
                 }
 
                 // 3. return new state
                 return model->new_state(state, this->last_sampled_vertex);
-            }
+            } 
 
             /**
              * @brief Previously sampled vertex.
@@ -66,6 +67,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             * @param model         - model of random walk
             * @param init_startegy - initialization strategy
             */
+            // 初始化策略：
+            // 随机初始化：随机选择一个顶点作为起点。
+            // 预热（Burn-in）初始化：随机初始化后，执行100次采样，使采样器达到平稳分布。
+            // 权重优先初始化：随机初始化后，选择权重最高的顶点。
+
             void init(types::State& current_state, dygrl::RandomWalkModel* model, types::SamplerInitStartegy init_startegy)
             {
                 /* Random initialization of MH sampler */

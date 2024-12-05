@@ -1,6 +1,7 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+// 
 namespace types
 {
     // Vertex = graph vertex data type
@@ -10,6 +11,7 @@ namespace types
     using Degree               = uintE;
 
     // Neighbors = graph vertex neighbors
+    // 三元组 (neighbors, degree, is_sorted)
     using Neighbors            = std::tuple<Vertex*, Degree, bool>;
 
     // WalkID = unique walk id
@@ -24,9 +26,11 @@ namespace types
     // State = the state is defined as a pair of two numbers,
     // where the first represents the current vertex and the second contains the extra information
     // (e.g DeepWalk = current vertex, Node2Vec = previously visited vertex by the walker)
+    // 支持二阶游走，引入历史状态信息
     using State                = std::pair<Vertex, Vertex>;
 
     // CompressedEdges = structure (augmented parallel binary tree) that stores compressed edges
+    // C树结构
     using CompressedEdges      = edge_plus::treeplus;
     using CompressedTreesLists = edge_plus::edge_list;
 
@@ -37,9 +41,11 @@ namespace types
     enum SamplerInitStartegy   { RANDOM, BURNIN, WEIGHT };
 
     // Global Map of Changes (MoC) = contains starting positions to crop the walk
+    // MAV受到影响的映射
     using MapAffectedVertices  = libcuckoo::cuckoohash_map<WalkID, std::tuple<Position, Vertex, bool>>;
 
     // ChangeAccumulator = accumulator of changes for walk updates
+    // 游走更新的累加器
     using ChangeAccumulator    = libcuckoo::cuckoohash_map<Vertex, std::vector<PairedTriplet>>;
 }
 

@@ -1,5 +1,7 @@
 #include <wharf.h>
 
+#pragma GCC push_options
+#pragma GCC optimize ("O0")
 void throughput(commandLine& command_line)
 {
 	string fname             = string(command_line.getOptionValue("-f", default_file_name));
@@ -18,8 +20,8 @@ void throughput(commandLine& command_line)
 
 	string determinism      = string(command_line.getOptionValue("-det", "false"));
 	string range_search     = string(command_line.getOptionValue("-rs", "true"));
-	size_t num_of_batches   = command_line.getOptionIntValue("-nb", 10);
-	size_t half_of_bsize    = command_line.getOptionIntValue("-bs", 5000);
+	size_t num_of_batches   = command_line.getOptionIntValue("-nb", 10);        // 更新批次
+	size_t half_of_bsize    = command_line.getOptionIntValue("-bs", 5000);      
 	size_t merge_frequency  = command_line.getOptionIntValue("-mergefreq", 1);
 	config::merge_frequency = merge_frequency;
 	string mergemode        = string(command_line.getOptionValue("-mergemode", "parallel"));
@@ -102,7 +104,7 @@ void throughput(commandLine& command_line)
 
 	timer initial_walks_from_scratch_timer("GenerateInitialWalksFromScratch", false);
 	initial_walks_from_scratch_timer.start();
-	malin.generate_initial_random_walks();
+	malin.generate_initial_random_walks();             // 生成初始游走序列
 	initial_walks_from_scratch_timer.stop();
 	cout << "Total time to generate the walk corpus from scratch: " << initial_walks_from_scratch_timer.get_total() << endl;
 
@@ -111,7 +113,7 @@ void throughput(commandLine& command_line)
 	// TODO: Why incorrect numbers when MALIN_DEBUG is off?
 
 	auto batch_sizes = pbbs::sequence<size_t>(1);
-	batch_sizes[0] = half_of_bsize; //5;
+	batch_sizes[0] = half_of_bsize; //5000;
 //	batch_sizes[1] = 50;
 //	batch_sizes[2] = 500;
 //	batch_sizes[3] = 5000;
@@ -122,7 +124,7 @@ void throughput(commandLine& command_line)
 //  batch_sizes[5] = 500000;
 
 
-	for (short int i = 0; i < batch_sizes.size(); i++)
+	for (short int i = 0; i < batch_sizes.size(); i++) 
 	{
 		timer insert_timer("InsertTimer");
 		timer delete_timer("DeleteTimer");
@@ -161,7 +163,7 @@ void throughput(commandLine& command_line)
 //		FindNextNodeSimpleSearch.reset();
 		// ---
 
-		std::cout << "Batch size = " << 2 * batch_sizes[i] << " | ";
+		std::cout << "Batch size = " << 2 * batch_sizes[i] << " | " << std::endl;
 
 		double last_insert_time = 0;
 		double last_MAV_time    = 0.0;
@@ -193,9 +195,12 @@ void throughput(commandLine& command_line)
 			}
 
 			size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
-			auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false);
-
-			std::cout << edges.second << " ";
+			auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false); // 生成插入的边
+			// std::cout << "streaming edges as follows:" << std::endl;
+			// for (size_t i = 0; i < edges.second; i++) {
+			// 	std::cout << get<0> (edges.first[i])<< " " << get<1> (edges.first[i]) << std::endl;
+			// }
+			// std::cout << "this batch size is " << edges.second << " " << std::endl;
 
 			insert_timer.start();
 			auto x = malin.insert_edges_batch(edges.second, edges.first, b+1, false, true, graph_size_pow2); // pass the batch number as well
@@ -336,6 +341,7 @@ void throughput(commandLine& command_line)
 
 	std::cout << std::endl;
 }
+#pragma GCC pop_options
 
 int main(int argc, char** argv)
 {

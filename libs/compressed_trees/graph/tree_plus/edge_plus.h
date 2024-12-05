@@ -36,8 +36,12 @@ namespace edge_plus {
       }
     }
   };
+
+  // 增强型映射
   using edge_list = aug_map<edge_entry>;
 
+
+  // 管理一个树状数据结构及其附加的链表
   struct treeplus {
     using Tree = typename edge_list::Tree;
     using Node = typename edge_list::node;
