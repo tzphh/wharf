@@ -1,4 +1,4 @@
-#include <wharf.h>
+#include <stgraph.h>
 
 void get_walkpath(commandLine& command_line)
 {
@@ -111,6 +111,11 @@ void get_walkpath(commandLine& command_line)
         std::cout << "Edge " << i << ": " << edges[i] << " " << weights[i] << std::endl;
     }
 
+    dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
+
+
+
+    // dygrl::CompressedWalks walks = dygrl::CompressedWalks(graph.offsets, graph.edges, graph.weights, 0);  
     // // Assign the head frequency we read
 	// cout << endl << "Head frequency is " << compressed_lists::head_frequency << ", and thus, chunk size is " << compressed_lists::head_mask << endl;
     // // ---------------------------------

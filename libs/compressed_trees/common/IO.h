@@ -164,7 +164,6 @@ auto read_weighted_graph(const char* fname, bool is_symmetric, bool mmap=false) 
   for (size_t i = index + 1; i <= n + 1; i++) {
     offsets[i] = offsets[i - 1];
   }
-  //assert(index == n + 1);  
 
   // GC
   S.clear();

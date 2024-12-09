@@ -2,6 +2,7 @@
 #define VERTEX_H
 
 #include <compressed_walks.h>
+#include <compressed_weights.h>>
 #include <metropolis_hastings_sampler.h>
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
@@ -29,8 +30,6 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         }
 
         /**
-         * @brief VertexEntry constructor.
-         *
          * @param compressed_edges - compressed tree of edges
          * @param compressed_walks - compressed tree of walks
          * @param sampler_manager  - manager of MH samplers
@@ -39,7 +38,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             : compressed_edges(compressed_edges), compressed_walks(compressed_walks), sampler_manager(sampler_manager)
 			{ };
     };
-
+    
     /**
      * @brief Graph vertex structure.
      */
@@ -146,6 +145,159 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             delete entry.second.sampler_manager;
         }
     };
+
+    /**
+     * @brief VertexEntry2 represents a graph structure containing weights
+     */
+    struct VertexEntry2 : public VertexEntry
+    {
+        types::CompressedEdges compressed_weights;      
+        /**
+         * @brief VertexEntry default constructor.
+         */
+        VertexEntry2()
+        {
+            VertexEntry();
+            this->compressed_weights = types::CompressedEdges();
+        }
+        /**
+         * @param compressed_edges - compressed tree of edges
+         * @param compressed_walks - compressed tree of walks
+         * @param sampler_manager  - manager of MH samplers
+         */
+        VertexEntry2 (const types::CompressedEdges& compressed_edges, const types::CompressedEdges& compressed_weights, const std::vector<dygrl::CompressedWalks>& compressed_walks, dygrl::SamplerManager* sampler_manager)
+            : VertexEntry(compressed_edges, compressed_walks, sampler_manager), compressed_weights(compressed_weights)
+            { };
+    };
+
+    /**
+     * @brief Graph vertex structure containg weights.
+     */
+    struct Vertex2
+    {
+        using key_t = types::Vertex;              // key: vertex id
+        using val_t = VertexEntry2;                // value: compressed edges,compressed weights, comprecompressed walks and metropolis hastings samplers
+        using aug_t = types::Degree;              // augmentation: vertex degree
+
+        using entry_t = std::pair<key_t, val_t>;  // vertex - <vertex id, {compressed-edges, compressed-walks, MH samplers}>
+
+        // key x key -> key
+        static bool comp(const key_t& keyX, const key_t& keyY)
+        {
+            return keyX < keyY;
+        }
+
+        // key x value -> augmentation
+        static aug_t from_entry(const key_t& key, const val_t& value)
+        {
+            return value.compressed_edges.size();
+        }
+
+        // augmentation x augmentation -> augmentation
+        static aug_t combine(const aug_t& augX, const aug_t& augY)
+        {
+            return augX + augY;
+        }
+
+        // empty -> augmentation (default augmentation)
+        static aug_t get_empty()
+        {
+            return 0;
+        }
+
+        // copy existing entry
+        static entry_t copy_entry(const entry_t& entry)
+        {
+            // copy compressed edges
+            auto ce_plus = lists::copy_node(entry.second.compressed_edges.plus);         // ce plus part; bumps ref-cnt
+            auto ce_root = edge_plus::Tree_GC::inc(entry.second.compressed_edges.root);  // ce root part; bumps ref-cnt
+
+            // copy compressed weights
+            auto cw_plus = lists::copy_node(entry.second.compressed_weights.plus);
+            auto cw_root = edge_plus::Tree_GC::inc(entry.second.compressed_weights.root);
+
+            // copy compressed walks
+			std::vector<CompressedWalks> walk_trees_cpy;
+			for (const auto& cw : entry.second.compressed_walks)
+			{
+				auto cw_plus = lists::copy_node(cw.plus);         // cw plus part; bumps ref-cnt
+				auto cw_root = walk_plus::Tree_GC::inc(cw.root);  // cw root part; bumps ref-cnt
+
+				// Copy the (min, max) range as well
+				auto vnext_min = cw.vnext_min;
+				auto vnext_max = cw.vnext_max;
+				auto batch_num = cw.created_at_batch;
+
+				walk_trees_cpy.push_back(dygrl::CompressedWalks(cw_plus, cw_root, vnext_min, vnext_max, batch_num));
+			}
+
+            // copy sampler manager
+            auto sampler = new SamplerManager(entry.second.sampler_manager->size());
+            for(auto& table_entry : entry.second.sampler_manager->lock_table())
+            {
+                sampler->insert(table_entry.first, table_entry.second);
+            }
+
+            return std::make_pair(entry.first, VertexEntry2(types::CompressedEdges(ce_plus, ce_root), types::CompressedEdges(cw_plus, cw_root), walk_trees_cpy, sampler));
+        }
+
+        // delete an entry
+        static void del(entry_t& entry)
+        {
+            // delete compressed edges
+            if (entry.second.compressed_edges.plus)
+            {
+                lists::deallocate(entry.second.compressed_edges.plus);
+                entry.second.compressed_edges.plus = nullptr;
+            }
+            if (entry.second.compressed_edges.root)
+            {
+                auto T = edge_plus::edge_list();
+
+                T.root = entry.second.compressed_edges.root;
+                entry.second.compressed_edges.root = nullptr;
+            }
+
+            // delete compressed weights
+            if (entry.second.compressed_weights.plus)
+            {
+                lists::deallocate(entry.second.compressed_weights.plus);
+                entry.second.compressed_weights.plus = nullptr;
+            }
+            if (entry.second.compressed_weights.root)
+            {
+                auto T = edge_plus::edge_list();
+
+                T.root = entry.second.compressed_weights.root;
+                entry.second.compressed_weights.root = nullptr;
+            }
+
+            // delete compressed walks
+	        for (auto& cw : entry.second.compressed_walks)
+	        {
+		        if (cw.plus)
+		        {
+			        lists::deallocate(cw.plus);
+			        cw.plus = nullptr;
+		        }
+
+		        if (cw.root)
+		        {
+			        auto T = walk_plus::edge_list();
+
+			        T.root = cw.root;
+			        cw.root = nullptr;
+		        }
+			}
+
+            // delete sampler manager
+            entry.second.sampler_manager->clear();
+            delete entry.second.sampler_manager;
+        }
+    };
+
+
+
 }
 
 #endif
