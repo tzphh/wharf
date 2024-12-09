@@ -1,0 +1,14 @@
+##禁用编译优化，方便调试
+#include <iostream>
+
+#pragma optimize("", off) // 禁用优化
+void debug_function() {
+    int x = 42;
+    std::cout << "Debugging x: " << x << std::endl;
+}
+#pragma optimize("", on) // 恢复优化
+
+int main() {
+    debug_function();
+    return 0;
+}

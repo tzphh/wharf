@@ -6,10 +6,12 @@
             "type": "cppdbg",
             "request": "launch",
             // "program": "/home/tzp/workspace/wharf/build/experiments/memory-footprint", // 可执行文件路径
-            "program": "/home/tzp/workspace/wharf/build/experiments/throughput-latency", // 可执行文件路径
+            // "program": "/home/tzp/workspace/wharf/build/experiments/throughput-latency", // 可执行文件路径
+            "program": "/home/tzp/workspace/wharf/build/experiments/ut", // 可执行文件路径
             "args": [
                 //"-f", "/home/tzp/workspace/wharf/experiments/data/cora/cora.txt"
-                "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.txt"
+                // "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.txt"
+                "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.origin"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

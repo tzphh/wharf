@@ -62,8 +62,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             {
                 types::Vertex next_vertex = -1;
 
+                // 自定义lamada函数，搜索下一跳顶点所在的位置
                 bool result = this->iter_elms_cond(source, [&](auto value)
-                {
+                { 
                     auto pair = pairings::Szudzik<types::Vertex>::unpair(value);
 
                     auto this_walk_id  = pair.first / config::walk_length;                  // todo: needs floor?

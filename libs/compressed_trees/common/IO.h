@@ -12,12 +12,16 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <assert.h>
+// #include <types.h>
+// #include <limits>
+// #include <cstdint>
 
 #include "../pbbslib/strings/string_basics.h"
 #include "../pbbslib/sequence_ops.h"
 #include "../pbbslib/monoid.h"
 
 #include "compression.h"
+#include <climits>
 
 using namespace std;
 
@@ -64,6 +68,10 @@ pbbs::sequence<char> readStringFromFile(const char* fileName) {
   return bytes;
 }
 
+/**
+ * @brief Read an unweighted graph from a file.
+ */
+#pragma optimize("", off) 
 auto read_unweighted_graph(const char* fname, bool is_symmetric, bool mmap=false) {
   pbbs::sequence<char*> tokens;
   pbbs::sequence<char> S;
@@ -104,6 +112,66 @@ auto read_unweighted_graph(const char* fname, bool is_symmetric, bool mmap=false
   tokens.clear();
   return make_tuple(n, m, offsets, edges);
 }
+#pragma optimize("", on) 
+
+#pragma optimize("", off) 
+/**
+ * @brief Read an unweighted graph from a file.
+ */ 
+auto read_weighted_graph(const char* fname, bool is_symmetric, bool mmap=false) {
+  pbbs::sequence<char*> tokens;
+  pbbs::sequence<char> S;
+  if (mmap) {
+    auto SS = mmapStringFromFile(fname);
+    char *bytes = pbbs::new_array_no_init<char>(SS.second);
+    parallel_for(0, SS.second, [&] (size_t i) {
+      bytes[i] = SS.first[i];
+    });
+    if (munmap(SS.first, SS.second) == -1) {
+      perror("munmap");
+      exit(-1);
+    }
+    S = pbbs::sequence<char>(bytes, SS.second);
+  } else {
+    S = readStringFromFile(fname);
+  }
+  tokens = pbbs::tokenize(S, [] (const char c) { return pbbs::is_space(c); });
+  size_t n = atol(tokens[0]);     // total verts
+  size_t m = atol(tokens[1]);     // total edges
+  uintE* offsets = pbbs::new_array_no_init<uintE>(n + 1); // offset[i + 1] - offset[i] = degree
+  uintV* edges = pbbs::new_array_no_init<uintV>(m);
+  uintW* weights = pbbs::new_array_no_init<uintW>(m);
+  uintE pre = 0;
+  uintE source = 0;
+  offsets[0] = 0;    //  start from vertex 0
+  size_t index = 1;  
+  size_t diff = 0;   
+  for (size_t i = 0; i < m; i++) {
+    source = atol(tokens[2 + i * 3]);
+    edges[i] = atol(tokens[2 + i * 3 + 1]);
+    weights[i] = atol(tokens[2 + i * 3 + 2]);
+    if (pre != source) {
+      diff = source - pre;
+      for (size_t j = 1; j < diff; j++) {
+        offsets[index] = offsets[index - 1];
+        index++;
+      }
+      offsets[index++] = i;   // vertex i has neighbors from [offsets[i], offsets[i + 1])
+      pre = source;
+    }
+  }
+  offsets[index] = m;
+  for (size_t i = index + 1; i <= n + 1; i++) {
+    offsets[i] = offsets[i - 1];
+  }
+  //assert(index == n + 1);  
+
+  // GC
+  S.clear();
+  tokens.clear();
+  return make_tuple(n, m, offsets, edges, weights); 
+}
+#pragma optimize("", on)
 
 auto read_o_direct(const char* fname) {
   int fd;

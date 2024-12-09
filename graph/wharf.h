@@ -74,7 +74,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 		// 4. Construct the graph
 		auto replace = [](const VertexEntry& x, const VertexEntry& y) { return y; };
-		this->graph_tree = Graph::Tree::multi_insert_sorted(nullptr, vertices.begin(), vertices.size(), replace, true);
+		this->graph_tree = Graph::Tree::multi_insert_sorted(nullptr, vertices.begin(), vertices.size(), replace, true);  // 构造树
 
 		// Initialize the MAVs vector. 1 MAV for each batch
 //				MAVS = libcuckoo::cuckoohash_map<int, types::MapAffectedVertices>();
@@ -250,6 +250,30 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		this->map_vertices(map_func);
 	}
 
+	/**
+	 * @brief Get all neighbors of a given vertex.
+	 */
+	uintV* get_neighbors(types::Vertex vertex) const
+	{
+		auto entry = this->graph_tree.select(vertex);
+		return entry.value.second.compressed_edges.get_edges(vertex);
+
+		//std::cout << "given vertex: " << vertex << " " << entry.value.first << std::endl;
+		// how to traversal entry.value.second.compressed_edges
+		// auto edge_array = entry.value.second.compressed_edges.get_edges(vertex);
+		// auto degree = entry.value.second.compressed_edges.degree();
+		// for (size_t i = 0; i < degree; i++)
+		// {
+		// 	std::cout << edge_array[i] << " ";
+		// }
+		// std::cout << std::endl;
+		// for (auto e : entry.value.second.compressed_edges.)
+		// {
+		// 	std::cout << e.first << " " << e.second << std::endl;
+		// }
+		//return entry.value.second.compressed_edges.get_edges(vertex);
+	}
+	
 	/**
 	* @brief Creates initial set of random walks.  
 	*/
@@ -436,8 +460,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 			// uses only simple find_next
 			current_vertex = tree_node.value.compressed_walks.front().find_next(walk_id, position++, current_vertex); // operate on the front() as only one walk-tree exists after merging
-
-			if (current_vertex == previous_vertex)
+			if (current_vertex == previous_vertex)     // 顶点出现度为0，设置下一跳为当前跳，表示出现了自旋
 				break;
 		}
 
@@ -1617,7 +1640,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	{
 		libcuckoo::cuckoohash_map<types::Vertex, std::vector<std::vector<types::PairedTriplet>>> all_to_delete; // let's use a vector
 
-		auto flat_graph = this->flatten_vertex_tree();
+		auto flat_graph = this->flatten_vertex_tree();      // 获取快照
 
 		merge_calc_triplets_to_delete.start();
 //				for (auto i = 0; i < this->number_of_vertices(); i++) // TODO: make this parallel for
@@ -2432,12 +2455,12 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
   private:
 	Graph graph_tree;
-//			vector<types::MapAffectedVertices> MAVS;
-//            libcuckoo::cuckoohash_map<int, types::MapAffectedVertices> MAVS; // batch_num, MAV[batch_num]
-//			types::MapAffectedVertices MAVS2[10];
 	std::vector<types::MapAffectedVertices> MAVS2;
 	pbbs::sequence<types::Vertex> previousTouchedVertices;
 
+//			vector<types::MapAffectedVertices> MAVS;
+//            libcuckoo::cuckoohash_map<int, types::MapAffectedVertices> MAVS; // batch_num, MAV[batch_num]
+//			types::MapAffectedVertices MAVS2[10];
 
 	/**
 	* Initializes memory pools for underlying lists.

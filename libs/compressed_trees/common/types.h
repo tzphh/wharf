@@ -37,6 +37,19 @@ typedef unsigned int uintE;
 #define UINT_E_MAX UINT_MAX
 #endif
 
+// define WEIGHTLONG if there are more than MAX_UINT weights
+#if defined(WEIGHTLONG)
+typedef long intW;
+typedef unsigned long uintW;
+#define INT_W_MAX LONG_MAX
+#define UINT_W_MAX ULONG_MAX
+#else
+typedef int intW;
+typedef unsigned int uintW;
+#define INT_W_MAX INT_MAX
+#define UINT_W_MAX UINT_MAX
+#endif
+
 typedef unsigned int timestamp;
 typedef unsigned int ref_count;
 
