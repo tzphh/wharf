@@ -2,6 +2,8 @@
 #define DEEPWALK_H
 
 #include <random_walk_model.h>
+#include <snapshot.h>
+#include <snapshot2.h>
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
 {
@@ -20,6 +22,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             explicit DeepWalk(dygrl::Snapshot* snapshot)
             {
                 this->snapshot = snapshot;
+                this->alias_table.resize(0);
             }
 
             /**
@@ -27,7 +30,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             */
             ~DeepWalk()
             {
-                delete this->snapshot;
+                this->alias_table.clear();
+                if (!this->snapshot)
+                    delete this->snapshot;
             }
 
             /**
@@ -89,8 +94,93 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return vertex;
             }
 
+            /**
+             * @brief Build total alias table
+             */
+            void build_alias_table()
+            {
+                auto nverts = this->snapshot->size();
+                this->alias_table.resize(nverts);
+
+                std::vector<prob> probabilities;
+                std::vector<uintV> smaller, larger;
+                std::vector<prob> weight_list;
+                uintV n_smaller, n_larger;
+
+                for (size_t vert_id = 0; vert_id < nverts; vert_id++) {
+                    auto neighbors = this->snapshot->neighbors2(vert_id);   
+                    // only for SnapShot2
+                    auto edges = std::get<0>(neighbors);
+                    auto weights = std::get<1>(neighbors);
+                    auto degree = std::get<2>(neighbors);
+                    prob totalWeight = 0.0;
+
+                    if (degree == 0) continue;
+                    alias_table[vert_id].resize(degree);
+                    probabilities.resize(degree);
+
+                    // TODO：parallelize
+                    for (size_t i = 0; i < degree; i++) {
+                        totalWeight += weights[i];
+                    }
+        
+                    for (size_t i = 0; i < degree; i++) {
+                        probabilities[i] = weights[i] / totalWeight;
+                    }
+
+                    for (size_t i = 0; i < degree; i++) {
+                        alias_table[vert_id][i].probability = probabilities[i] * degree;
+                        alias_table[vert_id][i].second = -1;
+                        if (alias_table[vert_id][i].probability < 1.0) {
+                            smaller.push_back(i);
+                        } else {
+                            larger.push_back(i);
+                        }
+                    }
+                    while (!smaller.empty() && !larger.empty()) {
+                        n_smaller = smaller.back();
+                        smaller.pop_back();
+                        n_larger = larger.back();
+                        larger.pop_back();
+
+                        alias_table[vert_id][n_smaller].second = n_larger;
+                        alias_table[vert_id][n_larger].probability -= (1.0 -  alias_table[vert_id][n_smaller].probability);
+                        if (alias_table[vert_id][n_larger].probability < 1.0) {
+                            smaller.push_back(n_larger);
+                        } 
+                        else {
+                            larger.push_back(n_larger);
+                        }   
+                    }
+
+                    while (!larger.empty()) {
+                        int top = larger.back();
+                        larger.pop_back();
+                        alias_table[vert_id][top].probability = 1.0;
+                    }
+                    while (!smaller.empty()) {
+                        int top = smaller.back();
+                        smaller.pop_back();
+                        alias_table[vert_id][top].probability = 1.0;
+                    }
+                    probabilities.clear();
+                    larger.clear();
+                    smaller.clear();
+                }
+            }
+
+            /**
+             * @brief Build alias table for a vertex
+             * @param vertex Vertex to build alias table for
+             */
+            void build_alias_table(Vertex vertex)
+            {
+                
+            }
+
         private:
             Snapshot* snapshot;
+            std::vector<std::vector<types::AliasTable>> alias_table;
     };
 }
 

@@ -10,10 +10,15 @@ namespace types
     // Degree = graph vertex degree data type
     using Degree               = uintE;
 
+    // Weight = graph edge weight data type
+    using Weight               = uintW;
+
     // Neighbors = graph vertex neighbors
-    // 三元组 (neighbors, degree, is_sorted)
     using Neighbors            = std::tuple<Vertex*, Degree, bool>;
 
+    // Neighbors2 = graph vertex neighbors containing weights
+    using Neighbors2          = std::tuple<Vertex*, Weight*, Degree, bool>;
+    
     // WalkID = unique walk id
     using WalkID               = uint32_t;
 
@@ -47,6 +52,12 @@ namespace types
     // ChangeAccumulator = accumulator of changes for walk updates
     // 游走更新的累加器
     using ChangeAccumulator    = libcuckoo::cuckoohash_map<Vertex, std::vector<PairedTriplet>>;
+
+    //Alias Table
+    using AliasTable = struct {
+        prob probability;
+        Vertex second;
+    };
 }
 
 #endif

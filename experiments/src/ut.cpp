@@ -113,7 +113,7 @@ void get_walkpath(commandLine& command_line)
 
     dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
 
-
+    
 
     // dygrl::CompressedWalks walks = dygrl::CompressedWalks(graph.offsets, graph.edges, graph.weights, 0);  
     // // Assign the head frequency we read

@@ -52,5 +52,6 @@ typedef unsigned int uintW;
 
 typedef unsigned int timestamp;
 typedef unsigned int ref_count;
+typedef float    prob;
 
 constexpr size_t TOP_BIT = ((size_t)std::numeric_limits<long>::max()) + 1;

@@ -1,54 +1,27 @@
-#ifndef SNAPSHOT_H
-#define SNAPSHOT_H
+#ifndef SNAPSHOT2_H
+#define SNAPSHOT2_H
+#include "graph/snapshot.h"
+#include "types.h"
+#include "pbbslib/sequence.h"
+#include "vertex.h"
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
 {
     /**
-     * @brief Snapshot is an interface that should be implemented by all types of snapshots
-     * (e.g FlatVertexTree, FlatGraph, etc.).
-     */
-    class Snapshot
-    {
-        public:
-            /**
-            * @brief Given a graph vertex it returns its neighbors and degree.
-            *
-            * @param vertex - graph vertex
-            *
-            * @return - neighbors and degree of a given vertex
-            */
-            virtual types::Neighbors neighbors(types::Vertex vertex) = 0;
-            virtual types::Neighbors2 neighbors2(types::Vertex vertex) = 0;
-            /**
-             * @brief Snapshot size.
-             *
-             * @return - number of entries in a snapshot
-             */
-            virtual types::Vertex size() = 0;
-
-            /**
-             * @brief Snapshot size in bytes. The memory footprint of a snapshot.
-             *
-             * @return - size of a snapshot in bytes
-             */
-            virtual size_t size_in_bytes() = 0;
-    };
-
-    /**
-     * @brief FlatVertexTree stores vertex entries in an array.
+     * @brief FlatVertexTree stores vertex2 entries in an array.
      * This allows for O(1) access to vertex content and promises improved cache locality.
      */
-    class FlatVertexTree : public Snapshot
+    class FlatVertexTree2 : public Snapshot
     {
         public:
             /**
              * @brief FlatVertexTree constructor.
-             *
+             * 
              * @param vertices - number of vertices in a graph
              */
-            explicit FlatVertexTree(types::Vertex vertices)
+            explicit FlatVertexTree2(types::Vertex vertices)
             {
-                this->snapshot = pbbs::sequence<VertexEntry>(vertices);
+                this->snapshot = pbbs::sequence<VertexEntry2>(vertices);
             }
 
             /**
@@ -58,7 +31,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             *
             * @return - snapshot entry for a given vertex
             */
-            VertexEntry& operator[](types::Vertex vertex)
+            VertexEntry2& operator[](types::Vertex vertex)
             {
                 return this->snapshot[vertex];
             }
@@ -84,7 +57,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
             /**
-            * @brief Given a graph vertex it returns its neighbors and degree.
+            * @brief Given a graph vertex it returns its neighbors ,weights and degree.
             *
             * @param vertex - graph vertex
             *
@@ -93,39 +66,42 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             types::Neighbors neighbors(types::Vertex vertex) final
             {
                 auto neighbors = snapshot[vertex].compressed_edges.get_edges(vertex);
+                //auto weights   = snapshot[vertex].compressed_weights.get_edges(vertex);
                 auto degrees   = snapshot[vertex].compressed_edges.degree();
 
                 return std::make_tuple(neighbors, degrees, true);
             }
 
         private:
-            pbbs::sequence<VertexEntry> snapshot;
+            pbbs::sequence<VertexEntry2> snapshot;
     };
 
     /**
      * @brief FlatGraphEntry represents one entry in the flat graph snapshot.
      */
-    struct FlatGraphEntry
+    struct FlatGraphEntry2
     {
         types::Vertex* neighbors;
+        types::Weight* weights;
         types::Degree degree;
         SamplerManager* samplers;
 
         /**
          * @brief FlatGraphEntry destructor.
          */
-        ~FlatGraphEntry()
+        ~FlatGraphEntry2()
         {
             pbbs::free_array(neighbors);
+            pbbs::free_array(weights);
         }
     };
 
     /**
-     * @brief FlatGraph stores for each vertex its neighbors, degree, and reference to its sampler manager.
+     * @brief FlatGraph2 stores for each vertex its neighbors, degree, weight and reference to its sampler manager.
      * This allows for O(1) access to the vertex, its edges and sampler manager and promises improved cache locality
      * at the expense of memory.
      */
-    class FlatGraph : public Snapshot
+    class FlatGraph2 : public Snapshot
     {
         public:
             /**
@@ -133,19 +109,19 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              *
              * @param vertices - number of vertices in a graph
              */
-            explicit FlatGraph(types::Vertex vertices)
+            explicit FlatGraph2(types::Vertex vertices)
             {
-                this->snapshot = pbbs::sequence<FlatGraphEntry>(vertices);
+                this->snapshot = pbbs::sequence<FlatGraphEntry2>(vertices);
             }
 
             /**
-            * @brief FlatGraph subscript operator overloading.
+            * @brief FlatGraph2 subscript operator overloading.
             *
             * @param vertex - graph vertex
             *
             * @return - snapshot entry for a given vertex
             */
-            FlatGraphEntry& operator[](types::Vertex vertex)
+            FlatGraphEntry2& operator[](types::Vertex vertex)
             {
                 return this->snapshot[vertex];
             }
@@ -167,12 +143,18 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             */
             size_t size_in_bytes() final
             {
-                std::atomic<size_t> total  = 0;
-
+                size_t total = 0;
+                std::vector<size_t> local_totals(this->snapshot.size());
                 parallel_for(0, this->snapshot.size(), [&](auto index)
                 {
-                    total += sizeof(this->snapshot[index]) + (sizeof(this->snapshot[index].neighbors) * this->snapshot[index].degree);
+                    local_totals[index] = sizeof(this->snapshot[index]) + (sizeof(this->snapshot[index].neighbors) * this->snapshot[index].degree);
                 });
+
+                #pragma omp critical
+                for (size_t i = 0; i < local_totals.size(); ++i)
+                {
+                    total += local_totals[i];
+                }
 
                 return total;
             }
@@ -189,8 +171,13 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return std::make_tuple(snapshot[vertex].neighbors, snapshot[vertex].degree, false);
             }
 
+            types::Neighbors2 neighbors2(types::Vertex vertex)
+            {
+                return std::make_tuple(snapshot[vertex].neighbors, snapshot[vertex].weights, snapshot[vertex].degree, false);
+            }
+            
         private:
-            pbbs::sequence<FlatGraphEntry> snapshot;
+            pbbs::sequence<FlatGraphEntry2> snapshot;
     };
 }
 
