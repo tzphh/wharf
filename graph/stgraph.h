@@ -13,6 +13,7 @@
 #include <models/deepwalk.h>
 #include <models/node2vec.h>
 #include <set>
+#include <memory>
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
 {
@@ -109,16 +110,16 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
          *
          * @return - the sequence of pointers to graph vertex entries
          */
-        [[nodiscard]] FlatVertexTree2 flatten_vertex_tree() const
+        [[nodiscard]] std::unique_ptr<FlatVertexTree2> flatten_vertex_tree() const
         {
             types::Vertex n_vertices = this->number_of_vertices();
-            auto flat_vertex_tree    = FlatVertexTree2(n_vertices);
+            auto flat_vertex_tree = std::make_unique<FlatVertexTree2>(n_vertices);
 
             auto map_func = [&] (const Graph::E& entry, size_t ind)
             {
                 const types::Vertex& key = entry.first;
                 const auto& value = entry.second;
-                flat_vertex_tree[key] = value;
+                (*flat_vertex_tree)[key] = value;
             };
 
             this->map_vertices(map_func);
@@ -141,7 +142,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 const auto& value = entry.second;
 
                 flat_graph[key].neighbors = entry.second.compressed_edges.get_edges(key);
-                flat_graph[key].weights   = entry.second.compressed_weights.get_edges(key);
+                flat_graph[key].weights   = reinterpret_cast<types::Weight*>(entry.second.compressed_weights.get_edges(key));
                 flat_graph[key].degree    = entry.second.compressed_edges.degree();
                 flat_graph[key].samplers  = entry.second.sampler_manager;
             };
@@ -170,7 +171,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	        auto total_vertices    = this->number_of_vertices();
             auto walks_to_generate = total_vertices * config::walks_per_vertex;
             std::cout << "GENERATE " << walks_to_generate << " walks." << endl;
-            auto cuckoo            = libcuckoo::cuckoohash_map<types::Vertex, std::vector<types::Vertex>>(total_vertices);  
+            auto cuckoo            = libcuckoo::cuckoohash_map<types::Vertex, std::vector<types::Vertex>>(total_vertices);   // walks hash which generate by pair fuction
 
             using VertexStruct  = std::pair<types::Vertex, VertexEntry2>;   // v_id -> compressed edges,compressed weights, compressed walks, and sampler manager
             auto vertices       = pbbs::sequence<VertexStruct>(total_vertices);  
@@ -181,13 +182,98 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 case types::DEEPWALK:
                     model = new DeepWalk(&graph);
                     break;
-                case types::NODE2VEC:
-                    model = new Node2Vec(&graph, config::paramP, config::paramQ);
-                    break;
+                // case types::NODE2VEC:
+                //     model = new Node2Vec(&graph, config::paramP, config::paramQ);
+                //     break;
                 default:
                     std::cerr << "Unrecognized random walking model" << std::endl;
                     std::exit(1);
             }
+
+            // 1、generate alias table
+            if (config::biased_sampling) {
+                std::cout << "Build alias table..." << std::endl;
+                model->build_alias_table();
+                std::cout << "Done." << std::endl;
+            }
+            // 2、walk in parallel
+            parallel_for(0, walks_to_generate, [&] (types::WalkID walk_id)
+            {
+                if (graph[walk_id % total_vertices].degree == 0) {
+                    types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});  
+                    cuckoo.insert(walk_id % total_vertices, std::vector<types::Vertex>());
+                    cuckoo.update_fn(walk_id % total_vertices, [&](auto& vector) {
+                        vector.push_back(hash);  
+                    });
+                    return;
+                }
+                
+                auto random = config::random;               // By default random initialization
+                if (config::deterministic_mode)
+                    random = utility::Random(walk_id / total_vertices);
+                types::State state  = model->initial_state(walk_id % total_vertices);   // std::pair<Vertex, Vertex>
+
+                for(types::Position position = 0; position < config::walk_length; position++) {
+                    if (!graph[state.first].samplers->contains(state.second))
+				        graph[state.first].samplers->insert(state.second , MetropolisHastingsSampler(state, model)); 
+                    auto new_state = config::biased_sampling ? 
+                                    graph[state.first].samplers->find(state.second).sample(state, model, true):
+                                    graph[state.first].samplers->find(state.second).sample(state, model);
+
+                if (!cuckoo.contains(state.first))
+				  cuckoo.insert(state.first, std::vector<types::Vertex>());       
+				
+			     types::PairedTriplet hash = (position != config::walk_length - 1) ?
+			                              pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, new_state.first}) :
+			                              pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, state.first}); // assign the current as next if EOW
+                cuckoo.update_fn(state.first, [&](auto& vector) {
+                    vector.push_back(hash);        
+                });
+
+                // Assign the new state to the sampler
+                state = new_state;
+                } 
+            });
+
+		    // 3. build vertices
+            parallel_for(0, total_vertices, [&](types::Vertex vertex)
+            {
+                if (cuckoo.contains(vertex))            // vertex has walks
+                {
+                    auto triplets = cuckoo.find(vertex);
+                    auto sequence = pbbs::sequence<types::Vertex>(triplets.size());
+
+                    parallel_for(0, triplets.size(), [&](size_t index)
+                    {
+                        sequence[index] = triplets[index];
+                    });
+
+                    // assert walks are created at batch 0 and sorted by vertex id
+                    pbbs::sample_sort_inplace(pbbs::make_range(sequence.begin(), sequence.end()), std::less<>()); 
+                    vector<dygrl::CompressedWalks> vec_compwalks;
+                    vec_compwalks.push_back(dygrl::CompressedWalks(sequence, vertex, 666, 666, /*next_min[vertex], next_max[vertex],*/ 0)); // this is created at time 0
+                    vertices[vertex] = std::make_pair(vertex, VertexEntry2(types::CompressedEdges(), types::CompressedEdges(), vec_compwalks, new dygrl::SamplerManager(0)));
+                }
+                else
+                {
+                    vector<dygrl::CompressedWalks> vec_compwalks; 
+                    vec_compwalks.push_back(dygrl::CompressedWalks(0)); // at batch 0
+                    vertices[vertex] = std::make_pair(vertex, VertexEntry2(types::CompressedEdges(), types::CompressedEdges(), vec_compwalks,new dygrl::SamplerManager(0)));  
+                }
+            });
+
+            // 4. Merge walks, walks are sorted by vector
+            auto replace = [&] (const uintV& src, const VertexEntry2& x, const VertexEntry2& y)   
+            {
+                auto x_prime = x;
+                x_prime.compressed_walks.push_back(y.compressed_walks.back()); // y has only one walk tree
+
+                return x_prime;
+            };
+            this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, vertices.begin(), vertices.size(), replace, true);
+            delete model;
+
+            return;
         }
 
         /**

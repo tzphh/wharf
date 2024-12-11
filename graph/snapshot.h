@@ -18,6 +18,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             * @return - neighbors and degree of a given vertex
             */
             virtual types::Neighbors neighbors(types::Vertex vertex) = 0;
+            
             virtual types::Neighbors2 neighbors2(types::Vertex vertex) = 0;
             /**
              * @brief Snapshot size.

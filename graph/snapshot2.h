@@ -1,6 +1,6 @@
 #ifndef SNAPSHOT2_H
 #define SNAPSHOT2_H
-#include "graph/snapshot.h"
+#include "snapshot.h"
 #include "types.h"
 #include "pbbslib/sequence.h"
 #include "vertex.h"
@@ -66,10 +66,17 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             types::Neighbors neighbors(types::Vertex vertex) final
             {
                 auto neighbors = snapshot[vertex].compressed_edges.get_edges(vertex);
-                //auto weights   = snapshot[vertex].compressed_weights.get_edges(vertex);
                 auto degrees   = snapshot[vertex].compressed_edges.degree();
 
                 return std::make_tuple(neighbors, degrees, true);
+            }
+
+            types::Neighbors2 neighbors2(types::Vertex vertex) final
+            {
+                auto neighbors = snapshot[vertex].compressed_edges.get_edges(vertex);
+                auto weights   = reinterpret_cast<uintW*>(snapshot[vertex].compressed_weights.get_edges(vertex));
+                auto degrees   = snapshot[vertex].compressed_edges.degree();
+                return std::make_tuple(neighbors, weights, degrees, true);
             }
 
         private:

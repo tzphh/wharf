@@ -112,8 +112,14 @@ void get_walkpath(commandLine& command_line)
     }
 
     dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
-
     
+    graph.generate_initial_random_walks();
+
+        // get walk path
+    std::cout << "Walk path test: " << std::endl;
+    for (size_t curWalkID = 0; curWalkID < n * w ; curWalkID++) {
+        std::cout << graph.walk_simple_find(curWalkID) << std::endl;
+    }
 
     // dygrl::CompressedWalks walks = dygrl::CompressedWalks(graph.offsets, graph.edges, graph.weights, 0);  
     // // Assign the head frequency we read

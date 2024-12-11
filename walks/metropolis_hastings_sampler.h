@@ -28,16 +28,15 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              *
              * @return - new state
              */
-            types::State sample(types::State& state, dygrl::RandomWalkModel* model)
+            types::State sample(types::State& state, dygrl::RandomWalkModel* model, bool biased_sample = false)
             {
                 // 1. propose new candidate and calculate weights
-                auto candidate_sample = model->propose_vertex(state);  // 提议新顶点
-                float new_weight = model->weight(state, candidate_sample); // 计算新顶点权重
-                float previous_weight = model->weight(state, this->last_sampled_vertex); // 当前顶点权重
-
+                auto candidate_sample = biased_sample ? model->biased_propose_vertex(state) : model->propose_vertex(state);  
+                float new_weight = model->weight(state, candidate_sample); 
+                float previous_weight = model->weight(state, this->last_sampled_vertex); 
 
                 // 2. try to accept the candidate
-                if (this->accept(previous_weight, new_weight))  // 根据权重决定是否接受新顶点
+                if (this->accept(previous_weight, new_weight))  
                 {
                     this->last_sampled_vertex = candidate_sample;
                 }

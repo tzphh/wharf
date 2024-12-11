@@ -2,6 +2,10 @@
 cmake_minimum_required(VERSION 3.13)
 project(wharf)
 
+# 禁用所有警告
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+
 # libraries
 include_directories(libs/libcuckoo)
 include_directories(libs/compressed_trees)

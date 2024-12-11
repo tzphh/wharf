@@ -95,9 +95,35 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
             /**
+            * @brief Biased propose next vertex given current state.
+            *
+            * @param state - current walker state
+            *
+            * @return - proposed vertex
+            */
+            types::Vertex biased_propose_vertex(const types::State& state) final
+            {
+                assert(this->alias_table.size() == this->snapshot->size());
+                auto neighbors = this->snapshot->neighbors2(state.first);   
+                auto degree = std::get<2>(neighbors);
+                auto vertex = state.first;
+                if (degree == 0) {
+                    return vertex;
+                }
+                auto pos = config::random.irand(degree);
+                auto prob = config::random.drand();
+                if (prob < alias_table[state.first][pos].probability) {
+                    vertex = std::get<0>(neighbors)[pos];
+                } else {
+                    vertex = alias_table[state.first][pos].second;
+                }
+                return vertex;
+            }
+
+            /**
              * @brief Build total alias table
              */
-            void build_alias_table()
+            void build_alias_table() final
             {
                 auto nverts = this->snapshot->size();
                 this->alias_table.resize(nverts);

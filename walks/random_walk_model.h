@@ -47,6 +47,21 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              * @return - proposed vertex
              */
             virtual types::Vertex propose_vertex(const types::State& state) = 0;
+
+             /**
+             * @brief Biased propose next vertex given current state .
+             *
+             * @param vertex - current walker state
+             *
+             * @return - proposed vertex
+             */
+            virtual types::Vertex biased_propose_vertex(const types::State& state) = 0;
+
+            /**
+             * @brief Generate alias table. 
+             *
+             */
+            virtual void build_alias_table() = 0;
     };
 }
 
