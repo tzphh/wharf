@@ -4,6 +4,8 @@
 #include <random_walk_model.h>
 #include <snapshot.h>
 #include <snapshot2.h>
+#include <weight.h>
+#include <utility.h>
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
 {
@@ -83,10 +85,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             */
             types::Vertex propose_vertex(const types::State& state) final
             {
+                auto random                = utility::Random(std::time(nullptr));
                 auto neighbors = this->snapshot->neighbors(state.first);   // 三元组 (邻居数组, 邻居数, 是否需要释放内存)
                 // auto vertex    = std::get<0>(neighbors)[config::random.irand(std::get<1>(neighbors))];  // todo: check 度数是否为0
                 // degree为0时下一跳为源顶点
-                auto vertex    = std::get<1>(neighbors) == 0 ? state.first : std::get<0>(neighbors)[config::random.irand(std::get<1>(neighbors))];  
+                auto vertex    = std::get<1>(neighbors) == 0 ? state.first : std::get<0>(neighbors)[random.irand(std::get<1>(neighbors))];  
                 
 
                 if (std::get<2>(neighbors)) pbbs::free_array(std::get<0>(neighbors));
@@ -110,8 +113,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 if (degree == 0) {
                     return vertex;
                 }
-                auto pos = config::random.irand(degree);
-                auto prob = config::random.drand();
+                auto random                = utility::Random(std::time(nullptr));
+                auto pos = random.irand(degree);
+                auto prob = random.drand();
                 if (prob < alias_table[state.first][pos].probability) {
                     vertex = std::get<0>(neighbors)[pos];
                 } else {
@@ -142,6 +146,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                     prob totalWeight = 0.0;
 
                     if (degree == 0) continue;
+                    
+                    // transfer weight 
+                    parallel_for(0, degree, [&](size_t i) {
+                        weights[i] = weight::get_weight(weights[i]);
+                    });
                     alias_table[vert_id].resize(degree);
                     probabilities.resize(degree);
 

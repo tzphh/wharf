@@ -99,6 +99,14 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return std::make_tuple(neighbors, degrees, true);
             }
 
+            types::Neighbors2 neighbors2(types::Vertex vertex) final
+            {
+                auto neighbors = snapshot[vertex].compressed_edges.get_edges(vertex);
+                auto degrees   = snapshot[vertex].compressed_edges.degree();
+
+                return std::make_tuple(neighbors, nullptr, degrees, true);
+            }
+            
         private:
             pbbs::sequence<VertexEntry> snapshot;
     };
@@ -188,6 +196,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             types::Neighbors neighbors(types::Vertex vertex) final
             {
                 return std::make_tuple(snapshot[vertex].neighbors, snapshot[vertex].degree, false);
+            }
+
+            types::Neighbors2 neighbors2(types::Vertex vertex) final
+            {
+                return std::make_tuple(snapshot[vertex].neighbors,nullptr, snapshot[vertex].degree, false);
             }
 
         private:

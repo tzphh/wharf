@@ -1,4 +1,6 @@
 # -------------------------- Wharf ----------------------------
+# 添加头文件路径
+include_directories(${CMAKE_SOURCE_DIR}/utils)
 
 option(CLANG     OFF)
 option(CILK      OFF)
@@ -36,6 +38,7 @@ endif()
 
 # set compile flags
 set(CMAKE_CXX_FLAGS "${CFLAGS} ${PFLAGS}")
+
 
 file(COPY data DESTINATION .)
 file(COPY bin/SNAPtoAdj DESTINATION .)

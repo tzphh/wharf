@@ -9,6 +9,7 @@
 #include <pairings.h>
 #include <vertex.h>
 #include <snapshot.h>
+#include <utility.h>
 
 #include <models/deepwalk.h>
 #include <models/node2vec.h>
@@ -294,9 +295,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			case types::DEEPWALK:
 				model = new DeepWalk(&graph);
 				break;
-			case types::NODE2VEC:
-				model = new Node2Vec(&graph, config::paramP, config::paramQ);
-				break;
+			// case types::NODE2VEC:
+			// 	model = new Node2Vec(&graph, config::paramP, config::paramQ);
+			// 	break;
 			default:
 				std::cerr << "Unrecognized random walking model" << std::endl;
 				std::exit(1);
@@ -317,7 +318,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			  return;
 		  }
 
-		  auto random = config::random; // By default random initialization
+		  auto random                = utility::Random(std::time(nullptr));
 		  if (config::deterministic_mode)
 			  random = utility::Random(walk_id / total_vertices);
 		  types::State state  = model->initial_state(walk_id % total_vertices);   // std::pair<Vertex, Vertex>
@@ -596,7 +597,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		// 2. Sort the edges in the batch (by source)
 		if (!sorted)
 		{
-			Wharf::sort_edge_batch_by_source(edges, m, nn);    // 根据源顶点进行排序
+			Wharf::sort_edge_batch_by_source(edges, m, nn);    // sort edges by src 
 		}
 
 		// 3. Remove duplicate edges
@@ -606,7 +607,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			auto bool_seq = pbbs::delayed_seq<bool>(edges_original.size(), [&] (size_t i)
 			{
 			  if(get<0>(edges_original[i]) == get<1>(edges_original[i])) return false;
-			  return (i == 0 || edges_original[i] != edges_original[i-1]);   // 源顶点不同，或者为第一个元素，则返回true，表示保留
+			  return (i == 0 || edges_original[i] != edges_original[i-1]);   
 			});
 
 			auto E = pbbs::pack(edges_original, bool_seq, fl); // Creates a new pbbs::sequence
@@ -616,12 +617,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			edges_deduped = E.to_array();                      // E afterwards is empty and nullptr
 		}
 
-		auto E = (edges_deduped) ? pbbs::make_range(edges_deduped, edges_deduped + m) : edges_original;
+		auto E = (edges_deduped) ? pbbs::make_range(edges_deduped, edges_deduped + m) : edges_original;   // E is the range of edges with duplicates removed
 
-		// for (size_t i = 0; i < E.size(); i++)
-		// {
-		// 	std::cout << "E[" << i << "] = (" << get<0>(E[i]) << ", " << get<1>(E[i]) << ")" << std::endl;
-		// }
 		// 4. Pack the starts vertices of edges
 		auto start_im = pbbs::delayed_seq<size_t>(m, [&] (size_t i)
 		{
@@ -629,10 +626,6 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		});
 
 		auto starts = pbbs::pack_index<size_t>(start_im, fl);   // index下标划分区间
-		// for (size_t i = 0; i < starts.size(); i++)
-		// {
-		// 	std::cout << "starts[" << i << "] = " << starts[i] << std::endl;
-		// }
 		size_t num_starts = starts.size();
 
 		// 5. Build new wharf vertices
@@ -659,12 +652,16 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  new_verts[i] = make_pair(v, VertexEntry(types::CompressedEdges(S, v, fl), vec_compwalks, new dygrl::SamplerManager(0)));   // 构造VertexEntry
 		});
 
-		types::MapAffectedVertices rewalk_points = types::MapAffectedVertices();     //  存储需要重新采样的顶点
+		types::MapAffectedVertices rewalk_points = types::MapAffectedVertices();     //  存储需要重新采样的顶点 MAV
 
-		// 定义了一个 replace Lambda 函数
+
+		// 定义了一个 replace Lambda 函数, 比较关键 
+		// src 顶点v
+		// a 和 b：分别表示旧的顶点条目和新插入的顶点条目 
+		// 只要v 有新边增加，就需要重新采样， 所以需要遍历walk C-tree
 		auto replace = [&, run_seq] (const intV& v, const VertexEntry& a, const VertexEntry& b)
 		{
-		  auto union_edge_tree = edge_plus::uniont(b.compressed_edges, a.compressed_edges, v, run_seq);  // 合并
+		  auto union_edge_tree = edge_plus::uniont(b.compressed_edges, a.compressed_edges, v, run_seq);  // 合并两个边树，构成新的c-tree 
 
 		  lists::deallocate(a.compressed_edges.plus);
 		  edge_plus::Tree_GC::decrement_recursive(a.compressed_edges.root, run_seq);                     // GC
@@ -673,15 +670,18 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  edge_plus::Tree_GC::decrement_recursive(b.compressed_edges.root, run_seq);					//  GC
 
 		  MAV_time.start();
-		  auto triplets_to_delete_pbbs   = pbbs::new_array<std::vector<types::PairedTriplet>>(a.compressed_walks.size());
+		  auto triplets_to_delete_pbbs   = pbbs::new_array<std::vector<types::PairedTriplet>>(a.compressed_walks.size());   // 旧的walks
 		  auto triplets_to_delete_vector = std::vector<std::vector<types::PairedTriplet>>();
 //					for (auto wt = a.compressed_walks.begin(); wt != a.compressed_walks.end(); wt++) // TODO: this could be a parallel for
+
+		// compressed_walks 是一个vector,存放不同batch的walk 序列
 		  parallel_for(0, a.compressed_walks.size(), [&](int index)
 		  {
 //					cout << "iterating wt-" << a.compressed_walks[index].created_at_batch << "(created on batch-" << a.compressed_walks[index].created_at_batch << ")" << endl;
+			// 遍历walk c-tree的每一个元素value
 			a.compressed_walks[index].iter_elms(v, [&](auto value)
 			{
-			  auto pair = pairings::Szudzik<types::PairedTriplet>::unpair(value);   // 解码walk
+			  auto pair = pairings::Szudzik<types::PairedTriplet>::unpair(value);   // 解码walk,得到关键信息
 			  auto walk_id = pair.first / config::walk_length;
 			  auto position = pair.first - (walk_id * config::walk_length);
 			  auto next = pair.second;
@@ -689,7 +689,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 			  auto p_min_global = config::walk_length;                             // 默认walk length
 			  // find the p_min_global among all existing MAVS for w
-			  for (auto mav = a.compressed_walks[index].created_at_batch+1; mav < batch_num; mav++)     // 遍历 mav
+			  // TODO: this is not the most efficient way to do it
+			  // 遍历之前的所有batch, 更新p_min_global
+			  for (auto mav = a.compressed_walks[index].created_at_batch + 1; mav < batch_num; mav++)     // 遍历 mav2
 			  {
 				  if (MAVS2[mav].contains(walk_id))
 				  {
@@ -700,12 +702,14 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			  } // constructed the p_min_global for this w. preffix of MAVS. preffix tree (trie data structure?)
 
 			  // Check the relationship of the triplet with respect to the p_min_global or the w
+
+			  // 如果pos 小于 p_min_global, 说明该walk需要重新采样
 			  if (position < p_min_global) // TODO: this accepts all?
 			  {
 				  // take the triplet under consideration for the MAV and proceed normally
 				  if (!rewalk_points.contains(walk_id))
 				  {
-					  rewalk_points.insert(walk_id, std::make_tuple(position, v, false));
+					  rewalk_points.insert(walk_id, std::make_tuple(position, v, false));    
 				  }
 				  else
 				  {
@@ -721,7 +725,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			  {
 				  ;
 				  // todo: DELETE THE TRIPLET FROM THE CURRENT WALK-TREE
-				  triplets_to_delete_pbbs[index].push_back(value);         // pos大于p_min_global的triplet，需要删除
+				  triplets_to_delete_pbbs[index].push_back(value);         // pos大于p_min_global的triplet，需要删除，此时失效
 			  }
 
 			});
@@ -738,6 +742,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 //                cout << endl;
 
 		  // Create a new vector of compressed walks
+		  // 用于删除的walk 序列
 		  vector<dygrl::CompressedWalks> vec_compwalks;
 		  for (auto j = 0; j < a.compressed_walks.size(); j++)
 		  {
@@ -753,6 +758,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  //				cout << endl;
 
 		  // Do the differences
+		  // 删除失效的walk
 		  std::vector<dygrl::CompressedWalks> new_compressed_vector;     // 存储精炼后的压缩行走树
 		  for (auto ind = 0; ind < a.compressed_walks.size(); ind++)
 		  {
@@ -801,9 +807,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		graph_update_time_on_insert.start();
 		this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, new_verts, num_starts, replace,true, run_seq);  // 更新图结构
 		graph_update_time_on_insert.stop();
+
 //cout << "3" << endl;
 
 		// Store/cache the MAV of each batch
+		// 根据合并中的rewalk_points 来更新MAVS
 		for(auto& entry : rewalk_points.lock_table()) // todo: blocking?
 		{
 			MAVS2[batch_num].insert(entry.first, entry.second);         // 更新MAV 受影响的顶点  
@@ -1023,19 +1031,23 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	 * @brief Updates affected walks in batch mode.
 	 * @param types::MapOfChanges - rewalking points
 	 */
+	// 重新采样受影响的顶点
+	// rewalk_points: 存储需要重新采样的顶点 walk_id --> std::make_tuple(position, v, should_reset)
 	void batch_walk_update(types::MapAffectedVertices& rewalk_points, pbbs::sequence<types::WalkID>& affected_walks, int batch_num)
 	{
 //				walk_insert_init.start();
+
 		types::ChangeAccumulator inserts = types::ChangeAccumulator();        // 插入累加器
 
 		uintV index = 0;
 
 		for(auto& entry : rewalk_points.lock_table()) // todo: blocking?
 		{
-			affected_walks[index++] = entry.first;      // affected_walks初始化
+			affected_walks[index++] = entry.first;      // affected_walks, 存储需要重新游走的walk id
 		}
 
 		auto graph = this->flatten_graph();           // 获取快照
+
 		RandomWalkModel* model;
 
 		switch (config::random_walk_model)
@@ -1043,9 +1055,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			case types::DEEPWALK:
 				model = new DeepWalk(&graph);
 				break;
-			case types::NODE2VEC:
-				model = new Node2Vec(&graph, config::paramP, config::paramQ);
-				break;
+			// case types::NODE2VEC:
+			// 	model = new Node2Vec(&graph, config::paramP, config::paramQ);
+			// 	break;
 			default:
 				std::cerr << "Unrecognized random walking model!" << std::endl;
 				std::exit(1);
@@ -1054,6 +1066,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 //cout << "5" << endl;
 
+		// 并行重新采样walk
 		if (!config::parallel_merge_wu)
 		{
 			// -----------------------
@@ -1081,11 +1094,12 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			  if (graph[current_vertex_new_walk].degree == 0)       // 如果度为零，此时不需要再更新下去
 			  {
 //						  szudzik_hash.start();
-				  types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + 0, current_vertex_new_walk});
+				  types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + 0, current_vertex_new_walk});    // walk 编码， 下一跳为current_vertex_new_walk
 //						  szudzik_hash.stop();
 
-				  if (!inserts.contains(current_vertex_new_walk)) {
+				  if (!inserts.contains(current_vertex_new_walk)) { 
 					inserts.insert(current_vertex_new_walk, std::vector<types::PairedTriplet>());   // 插入累加器初始化
+					// 就是一个 map <types::Vertex, vector>
 				  }
 				  
 				  inserts.update_fn(current_vertex_new_walk, [&](auto& vector) {
@@ -1095,9 +1109,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 				  return;
 			  }
 
-			  auto random = config::random; // By default random initialization
+			  auto random = utility::Random(std::time(nullptr));
 			  if (config::deterministic_mode)
 				  random = utility::Random(affected_walks[index] / this->number_of_vertices());
+
 			  auto state = model->initial_state(current_vertex_new_walk);
 
 			  if (config::random_walk_model == types::NODE2VEC && current_position > 0)
@@ -1125,11 +1140,13 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 				  number_of_sampled_vertices++;
 				  types::PairedTriplet hash = (position != config::walk_length - 1) ?
 				                              pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + position, state.first}) : // new sampled next
-				                              pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + position, current_vertex_new_walk});
+				                              pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + position, current_vertex_new_walk});  // 最后一跳
 
-				  if (!inserts.contains(current_vertex_new_walk)) inserts.insert(current_vertex_new_walk, std::vector<types::PairedTriplet>());
+				  if (!inserts.contains(current_vertex_new_walk)) {
+					inserts.insert(current_vertex_new_walk, std::vector<types::PairedTriplet>());
+				  }
 				  inserts.update_fn(current_vertex_new_walk, [&](auto& vector) {
-					vector.push_back(hash);
+					vector.push_back(hash);                                // 插入累加器加入hash
 				  });
 
 				  // Then, change the current vertex in the new walk
@@ -1191,7 +1208,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 						  return;
 					  }
 
-					  auto random = config::random; // By default random initialization
+					  auto random                = utility::Random(std::time(nullptr));
 					  if (config::deterministic_mode)
 						  random = utility::Random(affected_walks[index] / this->number_of_vertices());
 					  auto state = model->initial_state(current_vertex_new_walk);
@@ -1368,7 +1385,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			    MergeAll.stop();*/
 
 //cout << "6" << endl;
-
+		// TODO: after 合并walk数据
 		Walking_insert_new_samples.start();
 		using VertexStruct  = std::pair<types::Vertex, VertexEntry>;
 		auto insert_walks  = pbbs::sequence<VertexStruct>(inserts.size());
@@ -1636,6 +1653,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	/**
 	 * @brief Merges the walk-trees of each vertex in the hybrid-tree such that in the end each vertex has only one walk-tree
 	 */
+	// 合并walk tree
 	void merge_walk_trees_all_vertices_parallel(int num_batches_so_far)
 	{
 		libcuckoo::cuckoohash_map<types::Vertex, std::vector<std::vector<types::PairedTriplet>>> all_to_delete; // let's use a vector
@@ -1643,28 +1661,26 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		auto flat_graph = this->flatten_vertex_tree();      // 获取快照
 
 		merge_calc_triplets_to_delete.start();
-//				for (auto i = 0; i < this->number_of_vertices(); i++) // TODO: make this parallel for
+
 		parallel_for(0, this->number_of_vertices(), [&](size_t i)
 		{
-//					cout << "merging on vertex " << i << "\t(size of walk-tree vector " << flat_graph[i].compressed_walks.size() << ")" << endl;
 		  int inc = 0;
 
 		  auto triplets_to_delete_pbbs   = pbbs::new_array<std::vector<types::PairedTriplet>>(flat_graph[i].compressed_walks.size());
 		  auto triplets_to_delete_vector = std::vector<std::vector<types::PairedTriplet>>();
 
 		  // traverse each walk-tree and find out the obsolete triplets and create corresponding "deletion" walk-trees
+		  // 遍历所有的walk-tree，删除其中过时的walk数目
 		  for (auto wt = flat_graph[i].compressed_walks.begin(); wt != flat_graph[i].compressed_walks.end(); wt++) // TODO: make this parallel for. REMARK: does not pay off
 		  {
 			  // Define the triplets to delete vector for each walk-tree
 			  wt->iter_elms(i, [&](auto enc_triplet)
 			  {
-				auto pair = pairings::Szudzik<types::Vertex>::unpair(enc_triplet);
+				auto pair = pairings::Szudzik<types::Vertex>::unpair(enc_triplet);     // 获取walk
 
 				auto walk_id  = pair.first / config::walk_length;
 				auto position = pair.first - (walk_id * config::walk_length);
 				auto next_vertex   = pair.second;
-				//				cout << enc_triplet << " ";
-				//			  cout << "{" << walk_id << ", " << position << ", " << next_vertex << "}" << " " << endl;
 
 				auto p_min_global = config::walk_length;
 				for (auto mav = wt->created_at_batch+1; mav < num_batches_so_far+1; mav++) // CAUTION: #b in the input + 1
@@ -1699,13 +1715,14 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  }
 
 		  // add the triplets to delete for this vertex in a hashmap
+		  //  all_to_delete 也是一个map  vertex -> triplets 的 集合
 		  if (!all_to_delete.contains(i))
 			  all_to_delete.insert(i, std::vector<std::vector<types::PairedTriplet>>());
 		  all_to_delete.update_fn(i, [&](auto& vector) {
 			vector = triplets_to_delete_vector;
 		  });
 		});
-//				}
+
 		merge_calc_triplets_to_delete.stop();
 
 		merge_create_delete_walks.start();
@@ -1717,7 +1734,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			temp_deletes[skatindex++] = std::make_pair(item.first, item.second);
 		}
 
-		using VertexStruct = std::pair<types::Vertex, VertexEntry>;
+		// 将 all_to_delete  转换为VertexEntry
+		using VertexStruct = std::pair<types::Vertex, VertexEntry>;   
+		// 对C tree 做操作都需要先转换成        pbbs::sequence<VertexStruct> 的格式  
 		auto delete_walks  = pbbs::sequence<VertexStruct>(all_to_delete.size());
 		cout << "all_to_delete size: " << all_to_delete.size() << endl;
 		parallel_for(0, temp_deletes.size(), [&](auto kkk)
@@ -1739,6 +1758,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 			  vec_compwalks.push_back(dygrl::CompressedWalks(sequence, temp_deletes[kkk].first, 666, 666, num_batches_so_far)); // dummy min,max, batch_num
 		  }
 
+		  // 都是需要删除的 walk-tree
 		  delete_walks[kkk] = std::make_pair(temp_deletes[kkk].first, VertexEntry(types::CompressedEdges(), vec_compwalks, new dygrl::SamplerManager(0)));
 		});
 		merge_create_delete_walks.stop();
@@ -1756,6 +1776,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		  std::vector<dygrl::CompressedWalks> new_compressed_vector;
 		  for (auto ind = 0; ind < x.compressed_walks.size(); ind++)
 		  {
+			  // return x / y
 			  auto refined_walk_tree = walk_plus::difference(y.compressed_walks[ind], x.compressed_walks[ind], src);
 			  new_compressed_vector.push_back(dygrl::CompressedWalks(refined_walk_tree.plus, refined_walk_tree.root, 666, 666, num_batches_so_far)); // use dummy min, max, batch_num for now
 
@@ -1796,6 +1817,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		cout << "\n(merge) -- For batch-" << num_batches_so_far << " we are touching " << delete_walks.size() << " / " << number_of_vertices() << " vertices" << endl;
 
 		merge_multiinsert_ctress.start();
+		// 删除过时的walk
 		this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, delete_walks.begin(), delete_walks.size(), replaceI, true);
 		merge_multiinsert_ctress.stop();
 

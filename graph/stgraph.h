@@ -9,6 +9,7 @@
 #include <pairings.h>
 #include <vertex.h>
 #include <snapshot2.h>
+#include <utility.h>
 
 #include <models/deepwalk.h>
 #include <models/node2vec.h>
@@ -56,6 +57,12 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             // 4. Construct the graph
             auto replace = [](const VertexEntry2& x, const VertexEntry2& y) { return y; };
             this->graph_tree = Graph::Tree::multi_insert_sorted(nullptr, vertices.begin(), vertices.size(), replace, true);  
+
+
+            // 5. Initialize the mav
+            for (size_t i = 0; i < config::max_batch_num; i++) {
+                this->MAVS2.push_back(types::MapAffectedVertices());
+            }
 
             // 5. GC
             if (free_memory)
@@ -208,7 +215,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                     return;
                 }
                 
-                auto random = config::random;               // By default random initialization
+                auto random = utility::Random(std::time(nullptr));               // By default random initialization
                 if (config::deterministic_mode)
                     random = utility::Random(walk_id / total_vertices);
                 types::State state  = model->initial_state(walk_id % total_vertices);   // std::pair<Vertex, Vertex>
@@ -349,9 +356,70 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
     // TODO : add support for batch update
 
+    	/**
+	* @brief Inserts a batch of edges in the graph.
+	*
+	* @param m                  - size of the batch
+	* @param edges              - atch of edges to insert
+    * @param weights             - edge weights associated with the edges
+	* @param batch_num          - batch number, indicates the batch number
+	* @param sorted             - sort the edges in the batch
+	* @param remove_dups        - removes duplicate edges in the batch
+	* @param nn				    - limit the number of neighbors to be considered
+	* @param apply_walk_updates - decides if walk updates will be executed
+	*/
+	pbbs::sequence<types::WalkID> insert_edges_batch(size_t m,
+	                                                 std::tuple<uintV, uintV>* edges,
+                                                     uintW* weights,
+	                                                 int batch_num,
+	                                                 bool sorted = false,
+	                                                 bool remove_dups = false,
+	                                                 size_t nn = std::numeric_limits<size_t>::max(),
+	                                                 bool apply_walk_updates = true,
+	                                                 bool run_seq = false)
+	{
+        auto fl = run_seq ? pbbs::fl_sequential : pbbs::no_flag;
+
+        // 1. Set up , make sure edges and weights are sorted and decoupled
+        using Edge = std::tuple<uintV, uintV>;      
+        auto E = pbbs::make_range(edges, edges + m);
+        auto W = pbbs::make_range(weights, weights + m);
+
+		// 2. Pack the starts vertices of edges
+		auto start_im = pbbs::delayed_seq<size_t>(m, [&] (size_t i)
+		{
+		  return (i == 0 || (get<0>(E[i]) != get<0>(E[i - 1])));
+		});
+		auto starts = pbbs::pack_index<size_t>(start_im, fl);   
+		size_t num_starts = starts.size();
+
+        // 3. Build new vertices to insert and pack edges to new_verts
+        using KV = std::pair<uintV, VertexEntry2>;
+        KV* new_verts = pbbs::new_array<KV>(num_starts);
+        parallel_for(0, num_starts, [&] (size_t i) {
+            size_t off = starts[i];                                                                   // offset
+            size_t deg = (i == num_starts - 1) ? m - off : starts[i + 1] - off;                      // degree
+            uintV v = get<0>(E[off]);                                                                // source vertex
+            auto SE = pbbs::delayed_seq<uintV>(deg, [&] (size_t i) { return get<1>(E[off + i]); });   // get dst
+            auto SW = pbbs::delayed_seq<uintV>(deg, [&] (size_t i) { return W[off + i]; });   // get weight
+
+            vector<dygrl::CompressedWalks> vec_compwalks; 
+		    vec_compwalks.push_back(dygrl::CompressedWalks(batch_num));        // 初始化batch_num
+
+            new_verts[i] = make_pair(v, VertexEntry2(types::CompressedEdges(SE, v, fl),
+                                                     types::CompressedEdges(SW, v, fl),
+                                                     vec_compwalks,
+                                                     new dygrl::SamplerManager(0)));
+        });
+        types::MapAffectedVertices rewalk_points = types::MapAffectedVertices();  // MAV 受影响的顶点的映射
+        // 定义了一个 replace Lambda 函数, 比较关键 
+
+
+    }
+
     private:
         Graph graph_tree;   // same name as in Wharf
-
+        std::vector<types::MapAffectedVertices> MAVS2;    // MAV 受影响的顶点
         /**
          * @brief Initialize memory pools.
          */

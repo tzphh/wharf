@@ -2,6 +2,7 @@
 #define UTILITY_H
 
 #include <rmat_util.h>
+#include <globals.h>
 
 namespace utility
 {
@@ -49,6 +50,7 @@ namespace utility
     * @param b
     * @param c
     * @param run_seq - determines whether to run part of the code sequantially
+    * @param weighted - determines whether to generate weighted edges
     *
     * @return - batch of generated edges
     */
@@ -62,7 +64,9 @@ namespace utility
         double a = 0.5,
         double b = 0.2,
         double c = 0.1,
-        bool run_seq = false
+        bool run_seq = false,
+        bool weighted = false,
+        size_t weight_boundry = config::weight_boundry
     )
     {
         #ifdef WHARF_TIMER
@@ -93,10 +97,7 @@ namespace utility
 
         // 3. Sort edges by source
         auto edges_sorted = (directed) ? pbbs::make_range(edges, edges + edges_number) : pbbs::make_range(edges, edges + 2 * edges_number);
-        // for (size_t i = 0; i < edges_sorted.size(); i++)
-        // {
-        //     std::cout << std::get<0>(edges_sorted[i]) << " " << std::get<1>(edges_sorted[i]) << std::endl;
-        // }
+
         auto node_bits    = pbbs::log2_up(graph_size_pow2);
 
         auto edge_to_long = [graph_size_pow2, node_bits](Edge e) -> size_t {
@@ -129,19 +130,18 @@ namespace utility
         generated_edges = pack.to_array();
 
         pbbs::free_array(edges);
+        // generate weights
+        if (weighted) {
+            pbbs::random r(batch_seed);
+            auto weights = pbbs::new_array<uintW>(edges_generated);     
+            parallel_for(0, edges_generated, [&] (size_t i)
+            {
+                weights[i] = std::get<1>(generated_edges[i]) * config::graph_vertices + r.ith_rand(i) % weight_boundry;
+            });
+            return std::make_tuple(generated_edges, edges_generated, weights);
+        }
 
-        #ifdef WHARF_DEBUG
-            std::cout << edges_generated << " / "
-                      << ((directed) ? edges_number : 2 * edges_number)
-                      << " distinct edges (direction, duplicate removal and self-loop processing)"
-                      << std::endl;
-        #endif
-
-        #ifdef WHARF_TIMER
-            timer.reportTotal("time(seconds)");
-        #endif
-
-        return std::make_pair(generated_edges, edges_generated);
+        return std::make_tuple(generated_edges, edges_generated, static_cast<uintW*>(nullptr));
     }
 
     /**

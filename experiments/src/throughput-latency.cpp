@@ -203,7 +203,7 @@ void throughput(commandLine& command_line)
 			// std::cout << "this batch size is " << edges.second << " " << std::endl;
 
 			insert_timer.start();
-			auto x = malin.insert_edges_batch(edges.second, edges.first, b+1, false, true, graph_size_pow2); // pass the batch number as well
+			auto x = malin.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), b+1, false, true, graph_size_pow2); // pass the batch number as well
 			insert_timer.stop();
 
 			total_insert_walks_affected += x.size();
@@ -214,7 +214,7 @@ void throughput(commandLine& command_line)
 			latency[b] = latency_insert[b];
 
 			// Delete the batch of edges
-			malin.delete_edges_batch(edges.second, edges.first, b+1, false, true, graph_size_pow2, false);
+			malin.delete_edges_batch(std::get<1>(edges), std::get<0>(edges), b+1, false, true, graph_size_pow2, false);
 
 			// Update the MAV min and max
 			last_MAV_time = MAV_time.get_total() - last_MAV_time;
@@ -234,7 +234,7 @@ void throughput(commandLine& command_line)
 			WalkInsert_min = std::min(WalkInsert_min, last_Walk_new_insert_time);
 			WalkInsert_max = std::max(WalkInsert_max, last_Walk_new_insert_time);
 
-			pbbs::free_array(edges.first);
+			pbbs::free_array(std::get<0>(edges));
 
 			cout << "METRICS AT BATCH-" << b+1 << endl;
 			std::cout << "Insert time (avg) = " << insert_timer.get_total() / (b+1) << std::endl;

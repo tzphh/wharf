@@ -58,6 +58,7 @@ namespace types
         prob probability;
         Vertex second;
     };
+    
 }
 
 #endif

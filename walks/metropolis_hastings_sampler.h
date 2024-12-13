@@ -2,6 +2,7 @@
 #define METROPOLIS_HASTINGS_SAMPLERS_H
 
 #include <random_walk_model.h>
+#include <utility.h>
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
 {
@@ -123,7 +124,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             bool accept(float previous_weight, float new_weight)
             {
                 if (previous_weight < new_weight) return true;
-                return config::random.drand() <= (double)(new_weight) / (double)(previous_weight);
+                auto random                = utility::Random(std::time(nullptr));
+                return random.drand() <= (double)(new_weight) / (double)(previous_weight);
             }
     };
 }
