@@ -61,11 +61,11 @@ namespace utility
 		size_t batch_seed = 0,
         bool self_loops = false,
         bool directed = true,
+        bool weighted = false,
         double a = 0.5,
         double b = 0.2,
         double c = 0.1,
         bool run_seq = false,
-        bool weighted = false,
         size_t weight_boundry = config::weight_boundry
     )
     {
@@ -129,7 +129,13 @@ namespace utility
         auto edges_generated = pack.size();
         generated_edges = pack.to_array();
 
-        pbbs::free_array(edges);
+        // 遍历输出generated_edges
+        std::cout << "generated_edges:" << std::endl;
+        for (size_t i = 0; i < edges_generated; i++)
+        {
+            std::cout << std::get<0>(generated_edges[i]) << " " << std::get<1>(generated_edges[i]) << std::endl;
+        }
+
         // generate weights
         if (weighted) {
             pbbs::random r(batch_seed);

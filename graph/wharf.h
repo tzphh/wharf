@@ -1121,7 +1121,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 //				  FindPreviousVertexNode2Vec.start();
 				  state.second = this->vertex_at_walk(affected_walks[index], current_position - 1); // todo: inefficient
 //				  FindPreviousVertexNode2Vec.stop();
-			  }
+			  } 
 
 			  // 重新采样
 			  for (types::Position position = current_position; position < config::walk_length; position++)

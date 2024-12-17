@@ -1,4 +1,5 @@
 #include <stgraph.h>
+#include <models/deepwalk.h>
 
 void get_walkpath(commandLine& command_line)
 {
@@ -17,7 +18,7 @@ void get_walkpath(commandLine& command_line)
 
     string det         = string(command_line.getOptionValue("-det", "false"));
     string rs          = string(command_line.getOptionValue("-rs", "true"));
-	size_t num_of_batches   = command_line.getOptionIntValue("-nb", 10);
+	size_t num_of_batches   = command_line.getOptionIntValue("-nb", 3);
 	size_t half_of_bsize    = command_line.getOptionIntValue("-bs", 5000);
 	size_t merge_freq       = command_line.getOptionIntValue("-mergefreq", 1);
 	config::merge_frequency = merge_freq;
@@ -112,14 +113,64 @@ void get_walkpath(commandLine& command_line)
     }
 
     dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
+
+    config::graph_vertices = n;
+
+
+    auto graphflat             = graph.flatten_graph(); 
+        
+    dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalk(&graphflat);  // 初始化指针
+    graph.generate_initial_random_walks(*RWModel);  // 解引用指针，传递引用给函数
+
+    std::cout << "start generating streaming data----" << std::endl;
     
-    graph.generate_initial_random_walks();
+    int n_batches = num_of_batches; // todo: how many batches per batch size?
+
+	// TODO: Why incorrect numbers when MALIN_DEBUG is off?
+
+	auto batch_sizes = pbbs::sequence<size_t>(1);
+	batch_sizes[0] = half_of_bsize; //5000;
+
+    for (size_t i = 0; i < n_batches; i++) {
+        int batch_seed[n_batches];
+        for (auto i = 0; i < batch_sizes.size(); i++) {
+            batch_seed[i] = i;
+        }
+		for (short int b = 0; b < n_batches; b++)
+		{
+			cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
+
+			size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
+			auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false, true); // 生成插入的边,带权重
+
+            // 
+            auto NewEdges = std::get<1>(edges);
+            //auto E = pbbs::make_range(NewEdges, NewEdges + std::get<0>(edges));
+            
+			
+			auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges),std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
+		
+        }
+    }
+}
+int main(int argc, char** argv)
+{
+    std::cout << "Running experiment with: " << num_workers() << " threads." << std::endl;
+    commandLine command_line(argc, argv, "");
+
+    get_walkpath(command_line);
+}
+
+
+
+
+
 
         // get walk path
-    std::cout << "Walk path test: " << std::endl;
-    for (size_t curWalkID = 0; curWalkID < n * w ; curWalkID++) {
-        std::cout << graph.walk_simple_find(curWalkID) << std::endl;
-    }
+    // std::cout << "Walk path test: " << std::endl;
+    // for (size_t curWalkID = 0; curWalkID < n * w ; curWalkID++) {
+    //     std::cout << graph.walk_simple_find(curWalkID) << std::endl;
+    // }
 
     // dygrl::CompressedWalks walks = dygrl::CompressedWalks(graph.offsets, graph.edges, graph.weights, 0);  
     // // Assign the head frequency we read
@@ -146,13 +197,3 @@ void get_walkpath(commandLine& command_line)
     // for (size_t curVertexID = 0; curVertexID < n ; curVertexID++) {
     //     malin.get_neighbors(curVertexID);
     // }
-}
-int main(int argc, char** argv)
-{
-    std::cout << "Running experiment with: " << num_workers() << " threads." << std::endl;
-    commandLine command_line(argc, argv, "");
-
-    get_walkpath(command_line);
-}
-
-

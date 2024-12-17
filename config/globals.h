@@ -40,7 +40,7 @@ namespace config
 	int merge_frequency = 1;
 
     // determines whether to use the biased method for sampling, which is desiged for weighted graphs
-    bool biased_sampling       = false;
+    bool biased_sampling       = true;
 
     // determines the maximum weight of an edge
     size_t weight_boundry     = 100;

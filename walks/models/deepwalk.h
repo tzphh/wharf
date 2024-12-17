@@ -116,8 +116,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 auto random                = utility::Random(std::time(nullptr));
                 auto pos = random.irand(degree);
                 auto prob = random.drand();
-                if (prob < alias_table[state.first][pos].probability) {
-                    vertex = std::get<0>(neighbors)[pos];
+                if (prob <= alias_table[state.first][pos].probability) {
+                    vertex = std::get<0>(neighbors)[pos];     
                 } else {
                     vertex = alias_table[state.first][pos].second;
                 }
@@ -131,87 +131,96 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             {
                 auto nverts = this->snapshot->size();
                 this->alias_table.resize(nverts);
-
-                std::vector<prob> probabilities;
-                std::vector<uintV> smaller, larger;
-                std::vector<prob> weight_list;
-                uintV n_smaller, n_larger;
-
-                for (size_t vert_id = 0; vert_id < nverts; vert_id++) {
-                    auto neighbors = this->snapshot->neighbors2(vert_id);   
-                    // only for SnapShot2
-                    auto edges = std::get<0>(neighbors);
-                    auto weights = std::get<1>(neighbors);
-                    auto degree = std::get<2>(neighbors);
-                    prob totalWeight = 0.0;
-
-                    if (degree == 0) continue;
-                    
-                    // transfer weight 
-                    parallel_for(0, degree, [&](size_t i) {
-                        weights[i] = weight::get_weight(weights[i]);
-                    });
-                    alias_table[vert_id].resize(degree);
-                    probabilities.resize(degree);
-
-                    // TODO：parallelize
-                    for (size_t i = 0; i < degree; i++) {
-                        totalWeight += weights[i];
-                    }
-        
-                    for (size_t i = 0; i < degree; i++) {
-                        probabilities[i] = weights[i] / totalWeight;
-                    }
-
-                    for (size_t i = 0; i < degree; i++) {
-                        alias_table[vert_id][i].probability = probabilities[i] * degree;
-                        alias_table[vert_id][i].second = -1;
-                        if (alias_table[vert_id][i].probability < 1.0) {
-                            smaller.push_back(i);
-                        } else {
-                            larger.push_back(i);
-                        }
-                    }
-                    while (!smaller.empty() && !larger.empty()) {
-                        n_smaller = smaller.back();
-                        smaller.pop_back();
-                        n_larger = larger.back();
-                        larger.pop_back();
-
-                        alias_table[vert_id][n_smaller].second = n_larger;
-                        alias_table[vert_id][n_larger].probability -= (1.0 -  alias_table[vert_id][n_smaller].probability);
-                        if (alias_table[vert_id][n_larger].probability < 1.0) {
-                            smaller.push_back(n_larger);
-                        } 
-                        else {
-                            larger.push_back(n_larger);
-                        }   
-                    }
-
-                    while (!larger.empty()) {
-                        int top = larger.back();
-                        larger.pop_back();
-                        alias_table[vert_id][top].probability = 1.0;
-                    }
-                    while (!smaller.empty()) {
-                        int top = smaller.back();
-                        smaller.pop_back();
-                        alias_table[vert_id][top].probability = 1.0;
-                    }
-                    probabilities.clear();
-                    larger.clear();
-                    smaller.clear();
+                for (size_t i = 0; i < nverts; i++) {
+                    this->build_alias_table_single(i);
                 }
+                return;
             }
 
             /**
              * @brief Build alias table for a vertex
              * @param vertex Vertex to build alias table for
              */
-            void build_alias_table(Vertex vertex)
+            void build_alias_table_single(size_t vert_id) final
             {
+
+                //this->alias_table[vert_id].clear();
+                std::vector<prob> probabilities;
+                std::vector<prob> real_weights;
+                std::vector<uintV> smaller, larger;
+                std::vector<prob> weight_list;
+                uintV n_smaller, n_larger;
+
+                auto neighbors = this->snapshot->neighbors2(vert_id);   
+                auto edges = std::get<0>(neighbors);
+                auto weights = std::get<1>(neighbors);
+                auto degree = std::get<2>(neighbors);
+                prob totalWeight = 0.0;
+
+                if (degree == 0) return;
+
+                probabilities.resize(degree);
+                real_weights.resize(degree);
+                this->alias_table[vert_id].resize(degree);
+                parallel_for(0, degree, [&](size_t i) {
+                    real_weights[i] = weight::get_weight(weights[i]);
+                });
                 
+                // TODO：parallelize
+                for (size_t i = 0; i < degree; i++) {
+                    totalWeight += real_weights[i];
+                }
+
+                for (size_t i = 0; i < degree; i++) {
+                    probabilities[i] = real_weights[i] / totalWeight;
+                    //std::cout << weights[i] << " " << real_weights[i] << " " << totalWeight << " " << probabilities[i] << std::endl;
+                }
+
+                for (size_t i = 0; i < degree; i++) {
+                    alias_table[vert_id][i].probability = probabilities[i] * degree;
+                    alias_table[vert_id][i].second = -1;
+                    if (alias_table[vert_id][i].probability < 1.0) {
+                        smaller.push_back(i);
+                    } else {
+                        larger.push_back(i);
+                    }
+                }
+                while (!smaller.empty() && !larger.empty()) {
+                    n_smaller = smaller.back();
+                    smaller.pop_back();
+                    n_larger = larger.back();
+                    larger.pop_back();
+
+                    alias_table[vert_id][n_smaller].second = n_larger;
+                    alias_table[vert_id][n_larger].probability -= (1.0 -  alias_table[vert_id][n_smaller].probability);
+                    if (alias_table[vert_id][n_larger].probability < 1.0) {
+                        smaller.push_back(n_larger);
+                    } 
+                    else {
+                        larger.push_back(n_larger);
+                    }   
+                }
+
+                while (!larger.empty()) {
+                    int top = larger.back();
+                    larger.pop_back();
+                    alias_table[vert_id][top].probability = 1.0;
+                }
+                while (!smaller.empty()) {
+                    int top = smaller.back();
+                    smaller.pop_back();
+                    alias_table[vert_id][top].probability = 1.0;
+                }
+                probabilities.clear();
+                larger.clear();
+                smaller.clear();
+                return;
             }
+
+             std::vector<std::vector<types::AliasTable>>& get_alias_table() final
+             {
+                return this->alias_table;
+             }
 
         private:
             Snapshot* snapshot;
