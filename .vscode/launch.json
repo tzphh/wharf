@@ -11,7 +11,9 @@
             "args": [
                 //"-f", "/home/tzp/workspace/wharf/experiments/data/cora/cora.txt"
                 // "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.txt"
-                "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.origin"
+                "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.origin",
+                "-if", "/home/tzp/workspace/wharf/experiments/data/toy/toy.insert",
+                "-nb", "3"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

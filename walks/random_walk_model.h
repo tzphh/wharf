@@ -64,6 +64,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             virtual void build_alias_table() = 0;
             virtual void build_alias_table_single(size_t i) = 0;
             virtual std::vector<std::vector<types::AliasTable>>& get_alias_table() = 0;
+            //virtual void update_snapshot(dygrl::Snapshot* snapshot) = 0;
     };
 }
 

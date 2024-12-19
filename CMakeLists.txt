@@ -6,6 +6,10 @@ project(wharf)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 
+# 关闭优化
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+
 # libraries
 include_directories(libs/libcuckoo)
 include_directories(libs/compressed_trees)

@@ -104,6 +104,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             *
             * @return - proposed vertex
             */
+
+
+
+            // 别名cia
             types::Vertex biased_propose_vertex(const types::State& state) final
             {
                 assert(this->alias_table.size() == this->snapshot->size());
@@ -121,6 +125,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 } else {
                     vertex = alias_table[state.first][pos].second;
                 }
+
+                //std::cout << "current sample vertex is" << vertex << std::endl;
                 return vertex;
             }
 
@@ -178,7 +184,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 for (size_t i = 0; i < degree; i++) {
                     alias_table[vert_id][i].probability = probabilities[i] * degree;
-                    alias_table[vert_id][i].second = -1;
+                    alias_table[vert_id][i].second = 0;
                     if (alias_table[vert_id][i].probability < 1.0) {
                         smaller.push_back(i);
                     } else {
@@ -221,6 +227,15 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              {
                 return this->alias_table;
              }
+
+            void update_snapshot(dygrl::FlatGraph2* snapshot) 
+            {
+                if (this->snapshot != snapshot) {
+                    // delete this->snapshot;  // 假设 snapshot 是通过 new 创建的
+                    this->snapshot = snapshot;  // 更新成员变量
+                }
+                return;
+            }
 
         private:
             Snapshot* snapshot;

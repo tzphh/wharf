@@ -130,11 +130,11 @@ namespace utility
         generated_edges = pack.to_array();
 
         // 遍历输出generated_edges
-        std::cout << "generated_edges:" << std::endl;
-        for (size_t i = 0; i < edges_generated; i++)
-        {
-            std::cout << std::get<0>(generated_edges[i]) << " " << std::get<1>(generated_edges[i]) << std::endl;
-        }
+        // std::cout << "generated_edges:" << std::endl;
+        // for (size_t i = 0; i < edges_generated; i++)
+        // {
+        //     std::cout << std::get<0>(generated_edges[i]) << " " << std::get<1>(generated_edges[i]) << std::endl;
+        // }
 
         // generate weights
         if (weighted) {
@@ -150,6 +150,47 @@ namespace utility
         return std::make_tuple(generated_edges, edges_generated, static_cast<uintW*>(nullptr));
     }
 
+    
+
+
+    auto generate_edges_from_file(const std::string& filename, bool weighted = false) {
+        std::ifstream file(filename);
+        
+        // 检查文件是否成功打开
+        if (!file.is_open()) {
+            std::cerr << "Failed to open file: " << filename << std::endl;
+            return std::make_tuple(std::vector<std::tuple<uintV, uintV>>(), size_t(0), std::vector<uintW>());
+        }
+
+        std::vector<std::tuple<uintV, uintV>> edges;
+        std::vector<uintW> weights;
+        
+        uintV src, dst;
+        uintW weight;
+        size_t edge_count = 0;  // 明确使用 size_t 类型
+
+        // 读取文件中的每一行，解析 src, dst 和 weight
+        while (file >> src >> dst) {
+            // 读取权重
+            if (weighted) {
+                file >> weight;
+                weights.push_back(weight);
+            }
+            edges.push_back(std::make_tuple(src, dst));
+            edge_count++;
+        }
+
+        file.close();
+
+        // 返回生成的边及其数量
+        if (weighted) {
+            return std::make_tuple(edges, edge_count, weights);
+        } else {
+            return std::make_tuple(edges, edge_count, std::vector<uintW>());
+        }
+    }
+
+    
     /**
      * @brief Random number generator.
      * @details http://xoroshiro.di.unimi.it/#shootout

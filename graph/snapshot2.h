@@ -178,7 +178,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return std::make_tuple(snapshot[vertex].neighbors, snapshot[vertex].degree, false);
             }
 
-            types::Neighbors2 neighbors2(types::Vertex vertex)
+            types::Neighbors2 neighbors2(types::Vertex vertex) final
             {
                 return std::make_tuple(snapshot[vertex].neighbors, snapshot[vertex].weights, snapshot[vertex].degree, false);
             }

@@ -60,7 +60,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             */
             types::Vertex find_next(types::WalkID walk_id, types::Position position, types::Vertex source)
             {
-                types::Vertex next_vertex = -1;
+                types::Vertex next_vertex = 0;
 
                 // 自定义lamada函数，搜索下一跳顶点所在的位置
                 bool result = this->iter_elms_cond(source, [&](auto value)

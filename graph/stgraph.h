@@ -366,9 +366,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 // uses only simple find_next
                 if (config::range_search_mode)
-                    current_vertex = tree_node.value.compressed_walks.front().find_next_in_range(walk_id, position++, current_vertex);
+                    current_vertex = tree_node.value.compressed_walks.back().find_next_in_range(walk_id, position++, current_vertex);
                 else
-                    current_vertex = tree_node.value.compressed_walks.front().find_next(walk_id, position++, current_vertex); // operate on the front() as only one walk-tree exists after merging
+                    current_vertex = tree_node.value.compressed_walks.back().find_next(walk_id, position++, current_vertex); // operate on the front() as only one walk-tree exists after merging
 
                 if (current_vertex == previous_vertex)
                     break;
@@ -436,6 +436,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                                                      vec_compwalks,
                                                      new dygrl::SamplerManager(0)));
         });
+
+
         types::MapAffectedVertices rewalk_points = types::MapAffectedVertices();  // MAV 受影响的顶点的映射
         // 定义了一个 replace Lambda 函数, 比较关键 
         // v : src顶点
@@ -463,7 +465,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             auto triplets_to_delete_pbbs   = pbbs::new_array<std::vector<types::PairedTriplet>>(a.compressed_walks.size());   // 旧的walks，用于存储受影响的walk
 		    // auto triplets_to_delete_vector = std::vector<std::vector<types::PairedTriplet>>();
 
-            // compressed_walks 是一个vector,存放不同batch的walk 序列
+
+            // compressed_walks 是一个vector,存放不同batch的walk树
             parallel_for(0, a.compressed_walks.size(), [&] (size_t index)
             {
                 // 遍历所有的walk
@@ -502,6 +505,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                                 rewalk_points.update(walk_id, std::make_tuple(position, v, false));   // 更细pos, 定位到第一个受影响的点
                             }
                         }
+                        // std::cout << "walk_id: " << walk_id << " position: " << position << "need resample" << std::endl;
                     }
                     else {
                         triplets_to_delete_pbbs[index].push_back(value);  // pos大于p_min_global的triplet，需要删除，此时失效
@@ -561,17 +565,58 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         
         this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, new_verts, num_starts, replace,true, run_seq);
 
+        // 输出之前的walk 序列
+        // std::cout << "before resample walk squece: " << std::endl;
+        // for (auto i = 0; i < this->graph_tree.size(); i++) {
+        //     std::cout << "src: " << i << ": ";
+        //     std::cout << this->walk_simple_find(i) << std::endl;
+        // }
+
+        // 输出合并后的树
+        // std::cout << "after merge : ------------------- " << std::endl;
+        // for (auto i = 0; i < this->graph_tree.size(); i++)
+        // {
+        //     std::cout << "current src" << i << std::endl;
+        //     auto tree_node = this->graph_tree.find(i);
+        //     auto edges = tree_node.value.compressed_edges.get_edges(i);
+        //     auto weights = tree_node.value.compressed_weights.get_edges(i);
+        //     auto size = tree_node.value.compressed_edges.size();
+        //     for (auto j = 0; j < size; j++) {
+        //         std::cout << edges[j] << " " << weights[j] << " | ";
+        //     }
+        //     std::cout << std::endl;
+        // }
+
+
         // Store/cache the MAV of each batch
 		// 根据合并中的rewalk_points 来更新MAVS
+        // std::cout << "rewalk_points in this batch : " << std::endl;
 		for(auto& entry : rewalk_points.lock_table()) // todo: blocking?
 		{
 			MAVS2[batch_num].insert(entry.first, entry.second);         // 更新MAV 受影响的顶点  
+            // std::cout << entry.first << " : (" 
+            //         << std::get<0>(entry.second) << ", " 
+            //         << std::get<1>(entry.second) << ", " 
+            //         << std::get<2>(entry.second) << ")" 
+            //         << std::endl;
 		}
 		assert(rewalk_points.size() == MAVS2[batch_num].size());
 
+        
+
 		auto affected_walks = pbbs::sequence<types::WalkID>(rewalk_points.size());
+
+        // todo: debug
 		if (apply_walk_updates)
 			this->batch_walk_update(rewalk_points, affected_walks, batch_num, model);        // 重新采样受影响的顶点   
+
+
+        // 输出更新后的walk 序列
+        // std::cout << "after rewalk walk squece: " << std::endl;
+        // for (auto i = 0; i < this->graph_tree.size(); i++) {
+        //     std::cout << "src: " << i << ": ";
+        //     std::cout  << this->walk_simple_find(i) << std::endl;
+        // }
 
         return affected_walks;
     }
@@ -593,19 +638,6 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		}
 
 	    auto graph = this->flatten_graph();           // 获取快照
-
-		//RandomWalkModel* model;
-
-		// switch (config::random_walk_model)
-		// {
-		// 	case types::DEEPWALK:
-		// 		model = new DeepWalk(&graph);
-        //         break;
-		// 	default:
-		// 		std::cerr << "Unrecognized random walking model!" << std::endl;
-		// 		std::exit(1);
-        //         break;
-		// }   
 
         // 重新生成采样空间
         auto vertCuckoo = libcuckoo::cuckoohash_map<size_t, bool>();
@@ -631,40 +663,55 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         // });
 
         // TODO: 无法捕获
-        
-        std::cout << "before rebuild alias table" << std::endl;
-        auto alias_table = model.get_alias_table();
-        for (size_t i = 0; i < alias_table.size(); i++)
-        {
-            // auto current_src = vertices_to_resample[i];
-            auto alias_table_i = alias_table[i];
-            for (size_t j = 0; j < alias_table_i.size(); j++)
-            {
-                auto current_prob = alias_table_i[j].probability;
-                auto current_dst = alias_table_i[j].second;
-                std::cout << i << " " << current_dst << " " << current_prob << std::endl;
-            }
-        }
+        //输出受影响的顶点
+        // std::cout << "affected vertices: " << affected_vertices << std::endl;
+        // for (size_t i = 0; i < affected_vertices; i++)
+        // {
+        //     auto current_src = vertices_to_resample[i];
+        //     std::cout << current_src << " ";
+        // }
+        // std::cout <<std::endl<< "before rebuild alias table ------" << std::endl;
+
+        // auto alias_table = model.get_alias_table();
+        // for (size_t i = 0; i < alias_table.size(); i++)
+        // {
+        //     auto alias_table_i = alias_table[i];
+        //     for (size_t j = 0; j < alias_table_i.size(); j++)
+        //     {
+        //         auto current_prob = alias_table_i[j].probability;
+        //         auto current_dst = alias_table_i[j].second;
+        //         std::cout << i << " " << current_dst << " " << current_prob << std::endl;
+        //     }
+        // }
+
+        // 重新生成采样空间
+        // todo 更新model snapshot
+        auto new_graph_flat = this->flatten_graph();
+
+        DeepWalk& derived_model = dynamic_cast<DeepWalk&>(model); // 强制类型转换
+        derived_model.update_snapshot(&new_graph_flat);     
+        model = derived_model;          // 更新model snapshot, TODO: bugfix gc
+
+        //derived_model.update_snapshot(&new_graph_flat);
 
         for (auto& entry : rewalk_points.lock_table())
 		{
             model.build_alias_table_single(entry.first);
 		}
 
-        std::cout << "after rebuild alias table" << std::endl;
-        alias_table = model.get_alias_table();
-        for (size_t i = 0; i < alias_table.size(); i++)
-        {
-            // auto current_src = vertices_to_resample[i];
-            auto alias_table_i = alias_table[i];
-            for (size_t j = 0; j < alias_table_i.size(); j++)
-            {
-                auto current_prob = alias_table_i[j].probability;
-                auto current_dst = alias_table_i[j].second;
-                std::cout << i << " " << current_dst << " " << current_prob << std::endl;
-            }
-        }
-        
+        // std::cout << "after rebuild alias table" << std::endl;
+        // auto alias_table = model.get_alias_table();
+        // for (size_t i = 0; i < alias_table.size(); i++)
+        // {
+        //     auto alias_table_i = alias_table[i];
+        //     for (size_t j = 0; j < alias_table_i.size(); j++)
+        //     {
+        //         auto current_prob = alias_table_i[j].probability;
+        //         auto current_dst = alias_table_i[j].second;
+        //         std::cout << i << " " << current_dst << " " << current_prob << std::endl;
+        //     }
+        // }
+
         parallel_for(0, affected_walks.size(), [&](auto index)
         {
             auto entry = rewalk_points.template find(affected_walks[index]);   // 获取需要重新采样的vertex
@@ -676,14 +723,14 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             auto current_vertex_new_walk = current_vertex_old_walk;
 
             if (should_reset) // todo: clear out if this is needed
-            {
+            {   
                 current_position = 0;                        // 直接从头采样，相当于不使用增量更新
                 current_vertex_new_walk = current_vertex_old_walk = affected_walks[index] % this->number_of_vertices();
             }
 
             if (graph[current_vertex_new_walk].degree == 0)       // 如果度为零，此时不需要再更新下去
             {
-                types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + 0, current_vertex_new_walk});    // walk 编码， 下一跳为current_vertex_new_walk
+                types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({affected_walks[index] * config::walk_length + current_position, current_vertex_new_walk});    // walk 编码， 下一跳为current_vertex_new_walk
                 if (!inserts.contains(current_vertex_new_walk)) { 
                     inserts.insert(current_vertex_new_walk, std::vector<types::PairedTriplet>());   // 插入累加器初始化
                 }                
@@ -699,12 +746,6 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 random = utility::Random(affected_walks[index] / this->number_of_vertices());
 
             auto state = model.initial_state(current_vertex_new_walk);
-
-            // if (config::random_walk_model == types::NODE2VEC && current_position > 0)
-            // {
-            //     state.first  = current_vertex_new_walk;
-            //     state.second = this->vertex_at_walk(affected_walks[index], current_position - 1); // todo: inefficient
-            // } 
 
             // 重新采样
             for (types::Position position = current_position; position < config::walk_length; position++)
@@ -735,21 +776,66 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                     vector.push_back(hash);                                // 插入累加器加入hash
                 });
 
+                // std::cout << "walk " << affected_walks[index] << " " <<" position " << position << "  sample new vertex " << state.first << std::endl;
                 // Then, change the current vertex in the new walk
                 current_vertex_new_walk = state.first;
             }
-
-
 
         });
 
         if (batch_num % config::merge_frequency == 0)
         {
-            cout << "\n*** merge at batch-" << batch_num << endl;
+            cout << "\n------ merge at batch---------" << batch_num << endl;
             // TODO: 合并walk数据
+            // TODO: bugfix 无法合并tree
             merge_walk_trees_all_vertices_parallel(batch_num); // ok merge all old nodes
         }
+
+
+        // 合并walk 数据
+		using VertexStruct  = std::pair<types::Vertex, VertexEntry2>;
+		auto insert_walks  = pbbs::sequence<VertexStruct>(inserts.size());
+
+		auto temp_inserts = pbbs::sequence<std::pair<types::Vertex, std::vector<types::PairedTriplet>>>(inserts.size());
+		auto skatindex = 0;
+		for (auto& item: inserts.lock_table()) // TODO: This cannot be in parallel. Cuckoo-hashmap limitation
+		{
+			temp_inserts[skatindex++] = std::make_pair(item.first, item.second);
+		}
+
+		parallel_for(0, temp_inserts.size(), [&](auto j){
+		  auto sequence = pbbs::sequence<types::Vertex>(temp_inserts[j].second.size());
+
+		  parallel_for(0, temp_inserts[j].second.size(), [&](auto i){
+			sequence[i] = temp_inserts[j].second[i];
+		  });
+
+		  pbbs::sample_sort_inplace(pbbs::make_range(sequence.begin(), sequence.end()), std::less<>());
+		  vector<dygrl::CompressedWalks> vec_compwalks;
+		  vec_compwalks.push_back(dygrl::CompressedWalks(sequence, temp_inserts[j].first, 666, 666, batch_num));
+		  insert_walks[j] = std::make_pair(temp_inserts[j].first, VertexEntry2(types::CompressedEdges(), types::CompressedEdges(), vec_compwalks, new dygrl::SamplerManager(0)));
+		});
+
+
+		pbbs::sample_sort_inplace(pbbs::make_range(insert_walks.begin(), insert_walks.end()), [&](auto& x, auto& y) {
+		  return x.first < y.first;
+		});
+
+		// TODO: this when simple merge
+        // 保留x but replace y
+		auto replaceI = [&] (const uintV& src, const VertexEntry2& x, const VertexEntry2& y)
+		{
+		  auto x_prime = x.compressed_walks;
+		  if (y.compressed_walks.back().size() != 0)
+			  x_prime.push_back(y.compressed_walks.back()); // y has only one walk tree
+		  return VertexEntry2(x.compressed_edges, x.compressed_weights, x_prime, x.sampler_manager);
+		};
+
+		cout << "\n(insert) -- For batch-" << batch_num << " we are touching " << insert_walks.size() << " / " << number_of_vertices() << " vertices" << endl;
+		this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, insert_walks.begin(), insert_walks.size(), replaceI, true);
     }
+
+
 
 	/**
 	 * @brief Merges the walk-trees of each vertex in the hybrid-tree such that in the end each vertex has only one walk-tree
@@ -846,7 +932,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
             // 都是需要删除的 walk-tree
             delete_walks[kkk] = std::make_pair(temp_deletes[kkk].first, VertexEntry2(types::CompressedEdges(),types::CompressedEdges(), vec_compwalks, new dygrl::SamplerManager(0)));
-            });
+        });
 
             // Sort the delete walks
             pbbs::sample_sort_inplace(pbbs::make_range(delete_walks.begin(), delete_walks.end()), [&](auto& x, auto& y) {
@@ -898,7 +984,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
     private:
         Graph graph_tree;   // same name as in Wharf
         std::vector<types::MapAffectedVertices> MAVS2;    // MAV 受影响的顶点
-        //RandomWalkModel model;                           // 游走模型
+        
         /**
          * @brief Initialize memory pools.
          */

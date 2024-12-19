@@ -23,7 +23,7 @@ namespace types
     using WalkID               = uint32_t;
 
     // Position = the position of a vertex in the walk
-    using Position             = uint8_t;
+    using Position             = uint32_t;
 
     // PairedTriplet = a triplet <WalkID, Position, NextVertex> after encoded with the pairing function
     using PairedTriplet        = uint64_t;

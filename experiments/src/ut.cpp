@@ -4,6 +4,7 @@
 void get_walkpath(commandLine& command_line)
 {
     string fname       = string(command_line.getOptionValue("-f", default_file_name));
+    string insert_fname = string(command_line.getOptionValue("-if", ""));
     bool mmap          = command_line.getOption("-m");
     bool is_symmetric  = command_line.getOption("-s");
     bool compressed    = command_line.getOption("-c");
@@ -18,8 +19,8 @@ void get_walkpath(commandLine& command_line)
 
     string det         = string(command_line.getOptionValue("-det", "false"));
     string rs          = string(command_line.getOptionValue("-rs", "true"));
-	size_t num_of_batches   = command_line.getOptionIntValue("-nb", 3);
-	size_t half_of_bsize    = command_line.getOptionIntValue("-bs", 5000);
+	size_t num_of_batches   = command_line.getOptionIntValue("-nb", 1);
+	size_t half_of_bsize    = command_line.getOptionIntValue("-bs", 10);
 	size_t merge_freq       = command_line.getOptionIntValue("-mergefreq", 1);
 	config::merge_frequency = merge_freq;
 	string merge_mode       = string(command_line.getOptionValue("-mergemode", "parallel"));
@@ -103,21 +104,21 @@ void get_walkpath(commandLine& command_line)
     uintV* edges;
     uintW* weights;
     std::tie(n, m, offsets, edges, weights) = read_weighted_graph(fname.c_str(), is_symmetric, mmap);
-    for (size_t i = 0; i < n; i++)
-    {
-        std::cout << "Vertex " << i << " has " << offsets[i + 1] - offsets[i] << " neighbors" << std::endl;
-    }
-    for (size_t i = 0; i < m; i++)
-    {
-        std::cout << "Edge " << i << ": " << edges[i] << " " << weights[i] << std::endl;
-    }
+    // for (size_t i = 0; i < n; i++)
+    // {
+    //     std::cout << "Vertex " << i << " has " << offsets[i + 1] - offsets[i] << " neighbors" << std::endl;
+    // }
+    // for (size_t i = 0; i < m; i++)
+    // {
+    //     std::cout << "Edge " << i << ": " << edges[i] << " " << weights[i] << std::endl;
+    // }
 
     dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
 
     config::graph_vertices = n;
 
 
-    auto graphflat             = graph.flatten_graph(); 
+    auto graphflat = graph.flatten_graph(); 
         
     dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalk(&graphflat);  // 初始化指针
     graph.generate_initial_random_walks(*RWModel);  // 解引用指针，传递引用给函数
@@ -131,28 +132,30 @@ void get_walkpath(commandLine& command_line)
 	auto batch_sizes = pbbs::sequence<size_t>(1);
 	batch_sizes[0] = half_of_bsize; //5000;
 
-    for (size_t i = 0; i < n_batches; i++) {
-        int batch_seed[n_batches];
-        for (auto i = 0; i < batch_sizes.size(); i++) {
-            batch_seed[i] = i;
-        }
-		for (short int b = 0; b < n_batches; b++)
-		{
-			cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
+    // for (size_t i = 0; i < n_batches; i++) {
+    int batch_seed[n_batches];
+    for (auto i = 0; i < batch_sizes.size(); i++) {
+        batch_seed[i] = i;
+    }
+    for (short int b = 0; b < n_batches; b++)
+    {
+        cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
 
-			size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
-			auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false, true); // 生成插入的边,带权重
+        size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
+        // auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false, true); // 生成插入的边,带权重
 
-            // 
-            auto NewEdges = std::get<1>(edges);
-            //auto E = pbbs::make_range(NewEdges, NewEdges + std::get<0>(edges));
-            
-			
-			auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges),std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
-		
-        }
+        auto edges = utility::generate_edges_from_file(insert_fname + std::to_string(b), true);
+        // 
+        // auto NewEdges = std::get<1>(edges);
+        //auto E = pbbs::make_range(NewEdges, NewEdges + std::get<0>(edges));
+
+        // 自定义edges
+        // auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false, true);
+        
+        auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
     }
 }
+
 int main(int argc, char** argv)
 {
     std::cout << "Running experiment with: " << num_workers() << " threads." << std::endl;
