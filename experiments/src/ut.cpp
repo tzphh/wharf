@@ -24,6 +24,9 @@ void get_walkpath(commandLine& command_line)
 	size_t merge_freq       = command_line.getOptionIntValue("-mergefreq", 1);
 	config::merge_frequency = merge_freq;
 	string merge_mode       = string(command_line.getOptionValue("-mergemode", "parallel"));
+    bool biased_sample = command_line.getOption("-biased");
+    config::biased_sampling = biased_sample;
+
 	if (merge_mode == "parallel")
 	{
 		config::parallel_merge_wu = true;
@@ -98,6 +101,9 @@ void get_walkpath(commandLine& command_line)
         config::deterministic_mode = false;
     // ------------------------------------
 
+    if (config::biased_sampling) {
+        std::cout << "\n Biased sampling is enabled" << std::endl;
+    }
     size_t n;
     size_t m;
     uintE* offsets;
@@ -142,17 +148,11 @@ void get_walkpath(commandLine& command_line)
         cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
 
         size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
-        // auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false, true); // 生成插入的边,带权重
-
         auto edges = utility::generate_edges_from_file(insert_fname + std::to_string(b), true);
-        // 
-        // auto NewEdges = std::get<1>(edges);
-        //auto E = pbbs::make_range(NewEdges, NewEdges + std::get<0>(edges));
+        auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); 
 
-        // 自定义edges
-        // auto edges = utility::generate_batch_of_edges(batch_sizes[i], n, batch_seed[b], false, false, true);
-        
-        auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
+        // auto edges = utility::generate_batch_of_edges(batch_sizes[0], n, batch_seed[b], false, false, true); // 生成插入的边,带权  
+        // auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
     }
 }
 

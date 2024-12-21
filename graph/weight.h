@@ -7,6 +7,8 @@
 namespace weight{
     /**
      * @brief Get the weight of an encoded value.
+     * 
+     * @param value : tree node value
      */
     inline uintW get_weight(uintW value) {
         return (value % config::graph_vertices);

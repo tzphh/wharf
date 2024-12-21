@@ -195,6 +195,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         * @brief Creates initial set of random walks. 
         * @TODO: generate walks according to weights.  
         */
+#pragma optimize("", off) // 禁用优化
         void generate_initial_random_walks(RandomWalkModel& model)
         {
             auto graph             = this->flatten_graph();        // sequence of vertices snapshots
@@ -228,43 +229,95 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             //     }
             // }
             // 2、walk in parallel
-            parallel_for(0, walks_to_generate, [&] (types::WalkID walk_id)
-            {
+            // parallel_for(0, walks_to_generate, [&] (types::WalkID walk_id)
+            // {
+            //     if (graph[walk_id % total_vertices].degree == 0) {
+            //         types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});  
+            //         cuckoo.insert(walk_id % total_vertices, std::vector<types::Vertex>());
+            //         cuckoo.update_fn(walk_id % total_vertices, [&](auto& vector) {
+            //             vector.push_back(hash);  
+            //         });
+            //         return;
+            //     } 
+                
+            //     auto random = utility::Random(std::time(nullptr));               // By default random initialization
+            //     if (config::deterministic_mode)
+            //         random = utility::Random(walk_id / total_vertices);
+            //     types::State state  = model.initial_state(walk_id % total_vertices);   // std::pair<Vertex, Vertex>
+
+            //     for(types::Position position = 0; position < config::walk_length; position++) {
+            //         if (!graph[state.first].samplers->contains(state.second))
+			// 	        graph[state.first].samplers->insert(state.second , MetropolisHastingsSampler(state, &model)); 
+                    
+            //         // auto next_vertex = model.propose_vertex(state);
+            //         // auto new_state = types::State(next_vertex, next_vertex);
+            //         auto new_state = config::biased_sampling ? 
+            //                         graph[state.first].samplers->find(state.second).sample(state, &model, true):
+            //                         graph[state.first].samplers->find(state.second).sample(state, &model);
+
+            //     std::cout << "walk_id: " << walk_id << " position: " << position << " state: " << state.first << "  sample" << new_state.first << std::endl;
+            //     if (!cuckoo.contains(state.first))
+			// 	  cuckoo.insert(state.first, std::vector<types::Vertex>());       
+				
+			//      types::PairedTriplet hash = (position != config::walk_length - 1) ?
+			//                               pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, new_state.first}) :
+			//                               pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, state.first}); // assign the current as next if EOW
+            //     cuckoo.update_fn(state.first, [&](auto& vector) {
+            //         vector.push_back(hash);        
+            //     });
+
+            //     // Assign the new state to the sampler
+            //     state = new_state;
+            //     } 
+            // });
+
+            
+            // 2、walk in parallel
+            for (types::WalkID walk_id = 0; walk_id < walks_to_generate; ++walk_id) {
                 if (graph[walk_id % total_vertices].degree == 0) {
                     types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});  
                     cuckoo.insert(walk_id % total_vertices, std::vector<types::Vertex>());
                     cuckoo.update_fn(walk_id % total_vertices, [&](auto& vector) {
                         vector.push_back(hash);  
                     });
-                    return;
-                } 
-                
-                auto random = utility::Random(std::time(nullptr));               // By default random initialization
+                    continue;
+                }
+
+                auto random = utility::Random(std::time(nullptr)); // By default random initialization
                 if (config::deterministic_mode)
                     random = utility::Random(walk_id / total_vertices);
-                types::State state  = model.initial_state(walk_id % total_vertices);   // std::pair<Vertex, Vertex>
+                
+                types::State state = model.initial_state(walk_id % total_vertices); // std::pair<Vertex, Vertex>
 
-                for(types::Position position = 0; position < config::walk_length; position++) {
+                for (types::Position position = 0; position < config::walk_length; ++position) {
                     if (!graph[state.first].samplers->contains(state.second))
-				        graph[state.first].samplers->insert(state.second , MetropolisHastingsSampler(state, &model)); 
-                    auto new_state = config::biased_sampling ? 
-                                    graph[state.first].samplers->find(state.second).sample(state, &model, true):
-                                    graph[state.first].samplers->find(state.second).sample(state, &model);
+                        graph[state.first].samplers->insert(state.second, MetropolisHastingsSampler(state, &model));
+                    
+                    auto new_vert = model.biased_propose_vertex(state);
 
-                if (!cuckoo.contains(state.first))
-				  cuckoo.insert(state.first, std::vector<types::Vertex>());       
-				
-			     types::PairedTriplet hash = (position != config::walk_length - 1) ?
-			                              pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, new_state.first}) :
-			                              pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, state.first}); // assign the current as next if EOW
-                cuckoo.update_fn(state.first, [&](auto& vector) {
-                    vector.push_back(hash);        
-                });
+                    auto new_state = std::make_pair(new_vert, new_vert);
+                    
+                    // auto new_state = config::biased_sampling ? 
+                    //                 graph[state.first].samplers->find(state.second).sample(state, &model, true) :
+                    //                 graph[state.first].samplers->find(state.second).sample(state, &model);
 
-                // Assign the new state to the sampler
-                state = new_state;
-                } 
-            });
+                    // std::cout << "walk_id: " << walk_id << " position: " << position << " state: " << state.first << " sample: " << new_state.first << std::endl;
+
+                    if (!cuckoo.contains(state.first))
+                        cuckoo.insert(state.first, std::vector<types::Vertex>());
+                    
+                    types::PairedTriplet hash = (position != config::walk_length - 1) ? 
+                                                pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, new_state.first}) :
+                                                pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, state.first}); // assign the current as next if EOW
+                    
+                    cuckoo.update_fn(state.first, [&](auto& vector) {
+                        vector.push_back(hash);        
+                    });
+
+                    // Assign the new state to the sampler
+                    state = new_state;
+                }
+            }
 
 		    // 3. build vertices
             parallel_for(0, total_vertices, [&](types::Vertex vertex)
@@ -303,8 +356,15 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             };
             this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, vertices.begin(), vertices.size(), replace, true);
 
+            std::cout << "init walk squence: " << std::endl;
+                for (auto i = 0; i < this->graph_tree.size(); i++) {
+                std::cout << "src: " << i << ": ";
+                std::cout << this->walk_simple_find(i) << std::endl;
+            }
             return;
         }
+#pragma optimize("", on) // 禁用优化
+
 
         /**
          * @brief Walks through the walk given walk id.
@@ -589,16 +649,16 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 
         // Store/cache the MAV of each batch
-		// 根据合并中的rewalk_points 来更新MAVS
-        // std::cout << "rewalk_points in this batch : " << std::endl;
+		// 根据合并中的rewalk_points 来更新MAVS  WalkID, std::tuple<Position, Vertex, bool>
+        std::cout << "rewalk_points in this batch : " << std::endl;
 		for(auto& entry : rewalk_points.lock_table()) // todo: blocking?
 		{
 			MAVS2[batch_num].insert(entry.first, entry.second);         // 更新MAV 受影响的顶点  
-            // std::cout << entry.first << " : (" 
-            //         << std::get<0>(entry.second) << ", " 
-            //         << std::get<1>(entry.second) << ", " 
-            //         << std::get<2>(entry.second) << ")" 
-            //         << std::endl;
+            std::cout << entry.first << " : (" 
+                    << std::get<0>(entry.second) << ", " 
+                    << std::get<1>(entry.second) << ", " 
+                    << std::get<2>(entry.second) << ")" 
+                    << std::endl;
 		}
 		assert(rewalk_points.size() == MAVS2[batch_num].size());
 
@@ -757,6 +817,13 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                                     graph[state.first].samplers->find(state.second).sample(state, &model, true):
                                     graph[state.first].samplers->find(state.second).sample(state, &model);
 
+                // if (state.first == 4) {
+                //     std::cout << "state: " << state.first << " " << state.second << std::endl;
+                //     std::cout << "temp_state: " << temp_state.first << " " << temp_state.second << std::endl;
+                //     std::cout << "position: " << position << std::endl;
+                //     std::cout << "current_vertex_new_walk: " << current_vertex_new_walk << std::endl;
+                // }
+
                 if (config::deterministic_mode)
                 {
                     state = model.new_state(state, graph[state.first].neighbors[random.irand(graph[state.first].degree)]);
@@ -782,15 +849,6 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
         });
-
-        if (batch_num % config::merge_frequency == 0)
-        {
-            cout << "\n------ merge at batch---------" << batch_num << endl;
-            // TODO: 合并walk数据
-            // TODO: bugfix 无法合并tree
-            merge_walk_trees_all_vertices_parallel(batch_num); // ok merge all old nodes
-        }
-
 
         // 合并walk 数据
 		using VertexStruct  = std::pair<types::Vertex, VertexEntry2>;
@@ -833,6 +891,23 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 		cout << "\n(insert) -- For batch-" << batch_num << " we are touching " << insert_walks.size() << " / " << number_of_vertices() << " vertices" << endl;
 		this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, insert_walks.begin(), insert_walks.size(), replaceI, true);
+
+
+        if (batch_num % config::merge_frequency == 0)
+        {
+            cout << "\n------ merge at batch---------" << batch_num << endl;
+            // TODO: 合并walk数据
+            // TODO: bugfix 无法合并tree
+            merge_walk_trees_all_vertices_parallel(batch_num); // ok merge all old nodes
+
+            std::cout << "merge_walk_trees_all_vertices_parallel" << std::endl;
+            std::cout << "current walk squece: " << std::endl;
+                for (auto i = 0; i < this->graph_tree.size(); i++) {
+                std::cout << "src: " << i << ": ";
+                std::cout << this->walk_simple_find(i) << std::endl;
+            }
+        }
+    
     }
 
 
@@ -894,7 +969,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
         // add the triplets to delete for this vertex in a hashmap
         //  all_to_delete 也是一个map  vertex -> triplets 的 集合
-            if (!all_to_delete.contains(i))
+        if (!all_to_delete.contains(i))
                 all_to_delete.insert(i, std::vector<std::vector<types::PairedTriplet>>());
             all_to_delete.update_fn(i, [&](auto& vector) {
                 vector = triplets_to_delete_vector;

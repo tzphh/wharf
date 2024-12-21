@@ -38,7 +38,8 @@ endif()
 
 # set compile flags
 set(CMAKE_CXX_FLAGS "${CFLAGS} ${PFLAGS}")
-
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 file(COPY data DESTINATION .)
 file(COPY bin/SNAPtoAdj DESTINATION .)

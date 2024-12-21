@@ -6,6 +6,8 @@
 #include <snapshot2.h>
 #include <weight.h>
 #include <utility.h>
+#include <random>  
+#include "fast_random.h"
 
 namespace dynamic_graph_representation_learning_with_metropolis_hastings
 {
@@ -25,6 +27,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             {
                 this->snapshot = snapshot;
                 this->alias_table.resize(0);
+                seed = new RandNum(9898676785859);
             }
 
             /**
@@ -114,12 +117,26 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 auto neighbors = this->snapshot->neighbors2(state.first);   
                 auto degree = std::get<2>(neighbors);
                 auto vertex = state.first;
+                
+                // std::cout <<"current vert is" << state.first << std::endl;
+
                 if (degree == 0) {
+                    // cout << "degree is 0" << endl;
+                    // std::cout <<"current vert is" << state.first << " ,sample " << vertex << ::endl;
                     return vertex;
                 }
-                auto random                = utility::Random(std::time(nullptr));
-                auto pos = random.irand(degree);
-                auto prob = random.drand();
+                // auto random                = utility::Random(std::time(nullptr));
+                auto pos =  seed->iRand(static_cast<uint32_t>(degree));
+                auto prob = seed->dRand();
+
+
+                // std::cout << "current vertex is" << vertex << std::endl;
+                // std::cout << state.first <<" pos: " << pos << " prob  "<<prob << std::endl;
+                // for (size_t i = 0; i < degree; i++) {
+                //     std::cout << "neighbor is " << std::get<0>(neighbors)[i] << " weight is" <<std::get<1>(neighbors)[i]<<std::endl;
+                // }
+
+                
                 if (prob <= alias_table[state.first][pos].probability) {
                     vertex = std::get<0>(neighbors)[pos];     
                 } else {
@@ -127,6 +144,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 }
 
                 //std::cout << "current sample vertex is" << vertex << std::endl;
+                // std::cout <<"current vert is" << state.first << " ,sample " << vertex << ::endl;
                 return vertex;
             }
 
@@ -147,15 +165,17 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              * @brief Build alias table for a vertex
              * @param vertex Vertex to build alias table for
              */
+
+
+            // TODO:debug 生成别名表有问题
             void build_alias_table_single(size_t vert_id) final
             {
-
-                //this->alias_table[vert_id].clear();
                 std::vector<prob> probabilities;
                 std::vector<prob> real_weights;
                 std::vector<uintV> smaller, larger;
                 std::vector<prob> weight_list;
-                uintV n_smaller, n_larger;
+                int num_small_block = 0, num_large_block = 0;
+                int cur_small_block, cur_large_block;
 
                 auto neighbors = this->snapshot->neighbors2(vert_id);   
                 auto edges = std::get<0>(neighbors);
@@ -167,9 +187,13 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 probabilities.resize(degree);
                 real_weights.resize(degree);
+                // smaller.resize(degree);
+                // larger.resize(degree);
                 this->alias_table[vert_id].resize(degree);
+
                 parallel_for(0, degree, [&](size_t i) {
                     real_weights[i] = weight::get_weight(weights[i]);
+                    // std::cout << "real_weights is " << real_weights[i] << std::endl;
                 });
                 
                 // TODO：parallelize
@@ -181,7 +205,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                     probabilities[i] = real_weights[i] / totalWeight;
                     //std::cout << weights[i] << " " << real_weights[i] << " " << totalWeight << " " << probabilities[i] << std::endl;
                 }
-
+            
                 for (size_t i = 0; i < degree; i++) {
                     alias_table[vert_id][i].probability = probabilities[i] * degree;
                     alias_table[vert_id][i].second = 0;
@@ -191,13 +215,15 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                         larger.push_back(i);
                     }
                 }
+
+                size_t n_smaller, n_larger;
                 while (!smaller.empty() && !larger.empty()) {
                     n_smaller = smaller.back();
                     smaller.pop_back();
                     n_larger = larger.back();
                     larger.pop_back();
 
-                    alias_table[vert_id][n_smaller].second = n_larger;
+                    alias_table[vert_id][n_smaller].second = edges[n_larger];
                     alias_table[vert_id][n_larger].probability -= (1.0 -  alias_table[vert_id][n_smaller].probability);
                     if (alias_table[vert_id][n_larger].probability < 1.0) {
                         smaller.push_back(n_larger);
@@ -240,6 +266,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         private:
             Snapshot* snapshot;
             std::vector<std::vector<types::AliasTable>> alias_table;
+            RandNum *seed;
     };
 }
 

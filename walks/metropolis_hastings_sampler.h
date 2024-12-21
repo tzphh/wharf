@@ -31,19 +31,25 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              */
             types::State sample(types::State& state, dygrl::RandomWalkModel* model, bool biased_sample = false)
             {
+                // if (state.first == 4) {
+                //     // cout << "debuging" << std::endl;
+                // }
+
                 // 1. propose new candidate and calculate weights
                 auto candidate_sample = biased_sample ? model->biased_propose_vertex(state) : model->propose_vertex(state);  
-                float new_weight = model->weight(state, candidate_sample); 
-                float previous_weight = model->weight(state, this->last_sampled_vertex); 
+                
+                // float new_weight = model->weight(state, candidate_sample); 
+                // float previous_weight = model->weight(state, this->last_sampled_vertex); 
 
-                // 2. try to accept the candidate
-                if (this->accept(previous_weight, new_weight))  
-                {
-                    this->last_sampled_vertex = candidate_sample;
-                }
+                // // 2. try to accept the candidate
+                // if (this->accept(previous_weight, new_weight))  
+                // {
+                //     this->last_sampled_vertex = candidate_sample;
+                // }
 
                 // 3. return new state
-                return model->new_state(state, this->last_sampled_vertex);
+                // return model->new_state(state, this->last_sampled_vertex);
+                return model->new_state(state, candidate_sample);
             } 
 
             /**
