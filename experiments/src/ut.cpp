@@ -1,6 +1,6 @@
 #include <stgraph.h>
-#include <models/deepwalk.h>
-
+// #include <models/deepwalk.h>
+#include <models/deepwalk_hybrid_sample.h>
 void get_walkpath(commandLine& command_line)
 {
     string fname       = string(command_line.getOptionValue("-f", default_file_name));
@@ -26,6 +26,7 @@ void get_walkpath(commandLine& command_line)
 	string merge_mode       = string(command_line.getOptionValue("-mergemode", "parallel"));
     bool biased_sample = command_line.getOption("-biased");
     config::biased_sampling = biased_sample;
+    size_t chuck_size = command_line.getOptionIntValue("-chuck", 2);
 
 	if (merge_mode == "parallel")
 	{
@@ -102,7 +103,7 @@ void get_walkpath(commandLine& command_line)
     // ------------------------------------
 
     if (config::biased_sampling) {
-        std::cout << "\n Biased sampling is enabled" << std::endl;
+        std::cout << "Biased sampling is enabled" << std::endl;
     }
     size_t n;
     size_t m;
@@ -110,6 +111,7 @@ void get_walkpath(commandLine& command_line)
     uintV* edges;
     uintW* weights;
     std::tie(n, m, offsets, edges, weights) = read_weighted_graph(fname.c_str(), is_symmetric, mmap);
+
     // for (size_t i = 0; i < n; i++)
     // {
     //     std::cout << "Vertex " << i << " has " << offsets[i + 1] - offsets[i] << " neighbors" << std::endl;
@@ -118,27 +120,25 @@ void get_walkpath(commandLine& command_line)
     // {
     //     std::cout << "Edge " << i << ": " << edges[i] << " " << weights[i] << std::endl;
     // }
+    RunTime.start();
 
     dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
-
     config::graph_vertices = n;
 
-
-    auto graphflat = graph.flatten_graph(); 
-        
-    dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalk(&graphflat);  // 初始化指针
-    graph.generate_initial_random_walks(*RWModel);  // 解引用指针，传递引用给函数
-
-    std::cout << "start generating streaming data----" << std::endl;
+    auto graphflat = graph.flatten_graph();        // 更新快照
     
-    int n_batches = num_of_batches; // todo: how many batches per batch size?
+    dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalk(&graphflat); 
+    // dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalkHybridSample(&graphflat, chuck_size); 
 
-	// TODO: Why incorrect numbers when MALIN_DEBUG is off?
+    // generate initial random walks
+    graph.generate_initial_random_walks(*RWModel);  
 
+
+    // start generating streaming data
+    std::cout << "start generating streaming data----" << std::endl;
+    int n_batches = num_of_batches;             // todo: how many batches per batch size?
 	auto batch_sizes = pbbs::sequence<size_t>(1);
 	batch_sizes[0] = half_of_bsize; //5000;
-
-    // for (size_t i = 0; i < n_batches; i++) {
     int batch_seed[n_batches];
     for (auto i = 0; i < batch_sizes.size(); i++) {
         batch_seed[i] = i;
@@ -146,14 +146,29 @@ void get_walkpath(commandLine& command_line)
     for (short int b = 0; b < n_batches; b++)
     {
         cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
-
         size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
-        auto edges = utility::generate_edges_from_file(insert_fname + std::to_string(b), true);
-        auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); 
-
-        // auto edges = utility::generate_batch_of_edges(batch_sizes[0], n, batch_seed[b], false, false, true); // 生成插入的边,带权  
-        // auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
+        // auto edges = utility::generate_edges_from_file(insert_fname + std::to_string(b), true);
+        // auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); 
+        auto edges = utility::generate_batch_of_edges(batch_sizes[0], n, batch_seed[b], false, false, true); // 生成插入的边,带权  
+        auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
     }
+    RunTime.stop();
+
+// auto MAVTime                    = timer("MAVTime", false);
+// auto RunTime = timer("RunTime", false);
+// auto BuildSampleStructure = timer("BuildSampleStructure", false);
+// auto SampleVertex = timer("SampleVertex", false);
+// auto MergeGraph = timer("MergeGraph", false);
+// auto RebuildSampleStructure = timer("RebuildSampleStructure", false);
+
+
+    std::cout << "Total time: " << RunTime.get_total() << std::endl;
+    std::cout << "MAV time: " << MAVTime.get_total() << std::endl;
+    std::cout << "BuildSampleStructure time: " << BuildSampleStructure.get_total() << std::endl;
+    std::cout << "SampleVertex time: " << SampleVertex.get_total() << std::endl;
+    std::cout << "MergeGraph time: " << MergeGraph.get_total() << std::endl;
+    std::cout << "RebuildSampleStructure time: " << RebuildSampleStructure.get_total() << std::endl;
+ 
 }
 
 int main(int argc, char** argv)

@@ -73,9 +73,13 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
             types::Neighbors2 neighbors2(types::Vertex vertex) final
             {
+                // TODO: 优化时间复杂度
+                // TODO: wharf 无法提供线性时间内访问图数据的能力
                 auto neighbors = snapshot[vertex].compressed_edges.get_edges(vertex);
                 auto weights   = snapshot[vertex].compressed_weights.get_edges(vertex);
                 auto degrees   = snapshot[vertex].compressed_edges.degree();
+
+                // types::Neighbors neighbors = std::make_tuple(snapshoot.compressed_edges.get_edges(vertex), snapshoot.compressed_edges.degree(), true);
                 return std::make_tuple(neighbors, weights, degrees, true);
             }
 

@@ -28,7 +28,8 @@ def transfer_graph(file_path, output_file_path, max_weight = 100):
         output_file.write(str(total_edges) + "\n")
         for src in graph:
             for dst in graph[src]:
-                output_file.write(f"{src} {dst} {random.randint(a=1, b=max_weight)}\n")
+                # output_file.write(f"{src} {dst} {random.randint(a=1, b=max_weight)}\n")
+                output_file.write(f"{src} {dst} {random.randint(a=1, b=max_weight) + total_verts * dst}\n")
         
 if __name__ == "__main__":    
     file_path = sys.argv[1]              # 输入文件路径

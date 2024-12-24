@@ -163,6 +163,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         */
         [[nodiscard]] FlatGraph2 flatten_graph() const
         {
+            MergeGraph.start();
             size_t n_vertices = this->number_of_vertices();
             auto flat_graph   = FlatGraph2(n_vertices);
 
@@ -178,7 +179,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             };
 
             this->map_vertices(map_func);
-
+            MergeGraph.stop();
             return flat_graph;
         }
 
@@ -212,7 +213,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             // 1、generate alias table
             if (config::biased_sampling) {
                 std::cout << "Build alias table..." << std::endl;
-                model.build_alias_table();
+                BuildSampleStructure.start();
+                model.build_sample_structure();
+                BuildSampleStructure.stop();
                 std::cout << "Done." << std::endl;
             }
 
@@ -273,14 +276,15 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
             
             // 2、walk in parallel
-            for (types::WalkID walk_id = 0; walk_id < walks_to_generate; ++walk_id) {
+            parallel_for(0, walks_to_generate, [&] (types::WalkID walk_id)
+            {
                 if (graph[walk_id % total_vertices].degree == 0) {
                     types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});  
                     cuckoo.insert(walk_id % total_vertices, std::vector<types::Vertex>());
                     cuckoo.update_fn(walk_id % total_vertices, [&](auto& vector) {
                         vector.push_back(hash);  
                     });
-                    continue;
+                    return;
                 }
 
                 auto random = utility::Random(std::time(nullptr)); // By default random initialization
@@ -293,16 +297,12 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                     if (!graph[state.first].samplers->contains(state.second))
                         graph[state.first].samplers->insert(state.second, MetropolisHastingsSampler(state, &model));
                     
-                    auto new_vert = model.biased_propose_vertex(state);
-
+                    SampleVertex.start();
+                    // auto new_vert = model.biased_propose_vertex(state);
+                    auto new_vert = model.reject_propose_vertex(state);
+                    SampleVertex.stop();
                     auto new_state = std::make_pair(new_vert, new_vert);
-                    
-                    // auto new_state = config::biased_sampling ? 
-                    //                 graph[state.first].samplers->find(state.second).sample(state, &model, true) :
-                    //                 graph[state.first].samplers->find(state.second).sample(state, &model);
-
-                    // std::cout << "walk_id: " << walk_id << " position: " << position << " state: " << state.first << " sample: " << new_state.first << std::endl;
-
+                
                     if (!cuckoo.contains(state.first))
                         cuckoo.insert(state.first, std::vector<types::Vertex>());
                     
@@ -314,10 +314,50 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                         vector.push_back(hash);        
                     });
 
-                    // Assign the new state to the sampler
                     state = new_state;
                 }
-            }
+            });
+            // for (types::WalkID walk_id = 0; walk_id < walks_to_generate; ++walk_id) {
+            //     if (graph[walk_id % total_vertices].degree == 0) {
+            //         types::PairedTriplet hash = pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + 0, walk_id % total_vertices});  
+            //         cuckoo.insert(walk_id % total_vertices, std::vector<types::Vertex>());
+            //         cuckoo.update_fn(walk_id % total_vertices, [&](auto& vector) {
+            //             vector.push_back(hash);  
+            //         });
+            //         continue;
+            //     }
+
+            //     auto random = utility::Random(std::time(nullptr)); // By default random initialization
+            //     if (config::deterministic_mode)
+            //         random = utility::Random(walk_id / total_vertices);
+                
+            //     types::State state = model.initial_state(walk_id % total_vertices); // std::pair<Vertex, Vertex>
+
+            //     for (types::Position position = 0; position < config::walk_length; ++position) {
+            //         if (!graph[state.first].samplers->contains(state.second))
+            //             graph[state.first].samplers->insert(state.second, MetropolisHastingsSampler(state, &model));
+                    
+            //         SampleVertex.start();
+            //         //auto new_vert = model.biased_propose_vertex(state);
+            //         auto new_vert = model.reject_propose_vertex(state);
+            //         SampleVertex.stop();
+            //         auto new_state = std::make_pair(new_vert, new_vert);
+                
+            //         if (!cuckoo.contains(state.first))
+            //             cuckoo.insert(state.first, std::vector<types::Vertex>());
+                    
+            //         types::PairedTriplet hash = (position != config::walk_length - 1) ? 
+            //                                     pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, new_state.first}) :
+            //                                     pairings::Szudzik<types::Vertex>::pair({walk_id * config::walk_length + position, state.first}); // assign the current as next if EOW
+                    
+            //         cuckoo.update_fn(state.first, [&](auto& vector) {
+            //             vector.push_back(hash);        
+            //         });
+
+            //         // Assign the new state to the sampler
+            //         state = new_state;
+            //     }
+            // }
 
 		    // 3. build vertices
             parallel_for(0, total_vertices, [&](types::Vertex vertex)
@@ -356,11 +396,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             };
             this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, vertices.begin(), vertices.size(), replace, true);
 
-            std::cout << "init walk squence: " << std::endl;
-                for (auto i = 0; i < this->graph_tree.size(); i++) {
-                std::cout << "src: " << i << ": ";
-                std::cout << this->walk_simple_find(i) << std::endl;
-            }
+            // std::cout << "init walk squence: " << std::endl;
+            //     for (auto i = 0; i < this->graph_tree.size(); i++) {
+            //     std::cout << "src: " << i << ": ";
+            //     std::cout << this->walk_simple_find(i) << std::endl;
+            // }
             return;
         }
 #pragma optimize("", on) // 禁用优化
@@ -522,6 +562,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             edge_plus::Tree_GC::decrement_recursive(b.compressed_weights.root, run_seq);					//  GC
         
 
+            MAVTime.start();
             auto triplets_to_delete_pbbs   = pbbs::new_array<std::vector<types::PairedTriplet>>(a.compressed_walks.size());   // 旧的walks，用于存储受影响的walk
 		    // auto triplets_to_delete_vector = std::vector<std::vector<types::PairedTriplet>>();
 
@@ -617,13 +658,16 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 final_compressed_vector[0] = dygrl::CompressedWalks(union_all_tree.plus, union_all_tree.root, 666, 666, batch_num - 1); // refine the batch num after merging this node
             }
+
+            MAVTime.stop();
             return VertexEntry2(union_edge_tree, union_weight_tree, final_compressed_vector, b.sampler_manager);
         };
 
 
         // 合并c-tree
-        
+        MergeGraph.start();
         this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, new_verts, num_starts, replace,true, run_seq);
+        MergeGraph.stop();
 
         // 输出之前的walk 序列
         // std::cout << "before resample walk squece: " << std::endl;
@@ -654,11 +698,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		for(auto& entry : rewalk_points.lock_table()) // todo: blocking?
 		{
 			MAVS2[batch_num].insert(entry.first, entry.second);         // 更新MAV 受影响的顶点  
-            std::cout << entry.first << " : (" 
-                    << std::get<0>(entry.second) << ", " 
-                    << std::get<1>(entry.second) << ", " 
-                    << std::get<2>(entry.second) << ")" 
-                    << std::endl;
+            // std::cout << entry.first << " : (" 
+            //         << std::get<0>(entry.second) << ", " 
+            //         << std::get<1>(entry.second) << ", " 
+            //         << std::get<2>(entry.second) << ")" 
+            //         << std::endl;
 		}
 		assert(rewalk_points.size() == MAVS2[batch_num].size());
 
@@ -756,9 +800,14 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
         for (auto& entry : rewalk_points.lock_table())
 		{
-            model.build_alias_table_single(entry.first);
+            // model.build_alias_table_single(entry.first);
+            RebuildSampleStructure.start();
+            derived_model.build_sample_structure_single(entry.first % config::graph_vertices);
+            RebuildSampleStructure.stop();
 		}
 
+
+        
         // std::cout << "after rebuild alias table" << std::endl;
         // auto alias_table = model.get_alias_table();
         // for (size_t i = 0; i < alias_table.size(); i++)
@@ -813,10 +862,19 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 if (!graph[state.first].samplers->contains(state.second))
                     graph[state.first].samplers->insert(state.second, MetropolisHastingsSampler(state, &model));
 
-                auto temp_state = config::biased_sampling ? 
-                                    graph[state.first].samplers->find(state.second).sample(state, &model, true):
-                                    graph[state.first].samplers->find(state.second).sample(state, &model);
+                // SampleVertex.start();
+                // auto temp_state = config::biased_sampling ? 
+                //                     graph[state.first].samplers->find(state.second).sample(state, &model, true):
+                //                     graph[state.first].samplers->find(state.second).sample(state, &model);
+                // SampleVertex.stop();
 
+                    SampleVertex.start();
+                    //auto new_vert = model.biased_propose_vertex(state);
+                    auto new_vert = model.reject_propose_vertex(state);
+                    SampleVertex.stop();
+
+                    auto temp_state = std::make_pair(new_vert, new_vert);
+                    
                 // if (state.first == 4) {
                 //     std::cout << "state: " << state.first << " " << state.second << std::endl;
                 //     std::cout << "temp_state: " << temp_state.first << " " << temp_state.second << std::endl;
@@ -901,11 +959,11 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             merge_walk_trees_all_vertices_parallel(batch_num); // ok merge all old nodes
 
             std::cout << "merge_walk_trees_all_vertices_parallel" << std::endl;
-            std::cout << "current walk squece: " << std::endl;
-                for (auto i = 0; i < this->graph_tree.size(); i++) {
-                std::cout << "src: " << i << ": ";
-                std::cout << this->walk_simple_find(i) << std::endl;
-            }
+            // std::cout << "current walk squece: " << std::endl;
+            //     for (auto i = 0; i < this->graph_tree.size(); i++) {
+            //     std::cout << "src: " << i << ": ";
+            //     std::cout << this->walk_simple_find(i) << std::endl;
+            // }
         }
     
     }

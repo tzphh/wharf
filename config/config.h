@@ -12,8 +12,8 @@ auto graph_update_time_on_insert = timer("GraphUpdateTimeOnInsert", false);
 auto walk_update_time_on_insert  = timer("WalkUpdateTimeOnInsert", false);
 auto Walking_new_sampling_time   = timer("WalkInsertTimeFor2Jobs", false);
 auto Walking_insert_new_samples  = timer("WalkInsertTimeFor2Accs", false);
-auto MAV_time                    = timer("MAVTime", false);
 
+auto MAV_time                    = timer("MAVTime", false);
 auto graph_update_time_on_delete = timer("GraphUpdateTimeOnDelete", false);
 auto walk_update_time_on_delete  = timer("WalkUpdateTimeOnDelete", false);
 
@@ -23,6 +23,15 @@ auto merge_multiinsert_ctress      = timer("MergeMultiinsertCtrees", false);
 auto Merge_time                    = timer("MergeAllTimer", false);
 auto LastMerge                     = timer("LastMerge", false);
 auto ReadWalks                     = timer("ReadWalks", false);
+
+
+auto MAVTime                    = timer("MAVTime", false);
+auto RunTime = timer("RunTime", false);
+auto BuildSampleStructure = timer("BuildSampleStructure", false);
+auto SampleVertex = timer("SampleVertex", false);
+auto MergeGraph = timer("MergeGraph", false);
+auto RebuildSampleStructure = timer("RebuildSampleStructure", false);
+
 
 // Min and Max Measurements
 auto MAV_min = 1000.0;

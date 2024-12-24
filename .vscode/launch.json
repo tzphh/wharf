@@ -13,9 +13,13 @@
                 // "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.txt"
 
                 "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.origin",
-                "-if", "/home/tzp/workspace/wharf/experiments/data/toy/toy.insert",
-                "-nb", "3",
+                // "-if", "/home/tzp/workspace/wharf/experiments/data/toy/toy.insert",
+                "-nb", "10",
+                "-w", "1",
+                // "-bs", "100",  
+                // "-l", "80",
                 "-biased"
+
 
 
                 // "-f", "/home/tzp/dataset/soc/soc-livejournal.txt1",

@@ -43,13 +43,20 @@ namespace config
     bool biased_sampling       = true;
 
     // determines the maximum weight of an edge
-    size_t weight_boundry     = 100;
+    size_t weight_boundry     = 100000;
 
     // total vertexs in this graph
     size_t graph_vertices    = 20;
 
     // max batch num in this graph
     size_t max_batch_num    = 50;
+
+    // sample method
+    enum class SampleMethod {
+        Naive,
+        Reject,
+        Reservoir
+    };
 }
 
 #endif
