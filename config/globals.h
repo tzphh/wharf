@@ -51,12 +51,7 @@ namespace config
     // max batch num in this graph
     size_t max_batch_num    = 50;
 
-    // sample method
-    enum class SampleMethod {
-        Naive,
-        Reject,
-        Reservoir
-    };
+
 }
 
 #endif

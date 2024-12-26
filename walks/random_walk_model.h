@@ -59,6 +59,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
             virtual types::Vertex reject_propose_vertex(const types::State& state) = 0;
 
+            virtual types::Vertex reservoir_propose_vertex(const types::State& state) = 0;
+
             /**
              * @brief Generate alias table. 
              *
@@ -67,6 +69,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             virtual void build_sample_structure_single(size_t i) = 0;
             // virtual std::vector<std::vector<types::AliasTable>>& get_alias_table() = 0;
             //virtual void update_snapshot(dygrl::Snapshot* snapshot) = 0;
+
+            
+            types::SampleMethod sample_method;
     };
 }
 

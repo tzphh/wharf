@@ -23,11 +23,12 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              *
              * @param snapshot - graph snapshot
              */
-            explicit DeepWalk(dygrl::FlatGraph2* snapshot)
+            explicit DeepWalk(dygrl::FlatGraph2* snapshot, types::SampleMethod method)
             {
                 this->snapshot = snapshot;
                 this->alias_table.resize(0);
                 seed = new RandNum(9898676785859);
+                this->sample_method = method;
             }
 
             /**
@@ -155,7 +156,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
             types::Vertex reject_propose_vertex(const types::State& state) final 
             {
-                seed = new RandNum(742429651);
+                // seed = new RandNum(742429651);
                 auto neighbors = this->snapshot->neighbors2(state.first);
                 auto degree = std::get<2>(neighbors);
                 auto vertex = state.first;
@@ -179,6 +180,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return 0;
             }
 
+            virtual types::Vertex reservoir_propose_vertex(const types::State& state) final
+            {
+                return 0;
+            }
             /**
              * @brief Build total alias table
              */
@@ -189,17 +194,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 parallel_for(0, nverts, [&](size_t i) {
                     this->build_sample_structure_single(i);
-                    if (i % 100000 == 0) {
-                        std::cout << "Processed " << i << " vertices" << std::endl;
-                    }
                 });
-                // for (size_t i = 0; i < nverts; i++) {
-                //     this->build_sample_structure_single(i);
-                //     if (i % 100000 == 0) {
-                //         std::cout << "Processed " << i << " vertices" << std::endl;
-                //     }
-                // }
-                
+            
                 return;
             }
 

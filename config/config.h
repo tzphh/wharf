@@ -31,7 +31,9 @@ auto BuildSampleStructure = timer("BuildSampleStructure", false);
 auto SampleVertex = timer("SampleVertex", false);
 auto MergeGraph = timer("MergeGraph", false);
 auto RebuildSampleStructure = timer("RebuildSampleStructure", false);
-
+auto GenerateStream = timer("GenerateStream", false);
+auto MergeWalk = timer("MergeWalk", false);
+auto WalkUpdate = timer("WalkUpdate", false);
 
 // Min and Max Measurements
 auto MAV_min = 1000.0;

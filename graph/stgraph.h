@@ -394,7 +394,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 return x_prime;
             };
+
+            // MergeWalk.start();
             this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, vertices.begin(), vertices.size(), replace, true);
+            // MergeWalk.stop();
 
             // std::cout << "init walk squence: " << std::endl;
             //     for (auto i = 0; i < this->graph_tree.size(); i++) {
@@ -694,7 +697,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
         // Store/cache the MAV of each batch
 		// 根据合并中的rewalk_points 来更新MAVS  WalkID, std::tuple<Position, Vertex, bool>
-        std::cout << "rewalk_points in this batch : " << std::endl;
+        // std::cout << "rewalk_points in this batch : " << std::endl;
 		for(auto& entry : rewalk_points.lock_table()) // todo: blocking?
 		{
 			MAVS2[batch_num].insert(entry.first, entry.second);         // 更新MAV 受影响的顶点  
@@ -710,10 +713,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 		auto affected_walks = pbbs::sequence<types::WalkID>(rewalk_points.size());
 
-        // todo: debug
+        // WalkUpdate.start();
 		if (apply_walk_updates)
 			this->batch_walk_update(rewalk_points, affected_walks, batch_num, model);        // 重新采样受影响的顶点   
-
+        // WalkUpdate.stop();
 
         // 输出更新后的walk 序列
         // std::cout << "after rewalk walk squece: " << std::endl;
@@ -796,11 +799,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         derived_model.update_snapshot(&new_graph_flat);     
         model = derived_model;          // 更新model snapshot, TODO: bugfix gc
 
-        //derived_model.update_snapshot(&new_graph_flat);
 
         for (auto& entry : rewalk_points.lock_table())
 		{
-            // model.build_alias_table_single(entry.first);
             RebuildSampleStructure.start();
             derived_model.build_sample_structure_single(entry.first % config::graph_vertices);
             RebuildSampleStructure.stop();
@@ -868,12 +869,12 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 //                     graph[state.first].samplers->find(state.second).sample(state, &model);
                 // SampleVertex.stop();
 
-                    SampleVertex.start();
-                    //auto new_vert = model.biased_propose_vertex(state);
-                    auto new_vert = model.reject_propose_vertex(state);
-                    SampleVertex.stop();
+                SampleVertex.start();
+                //auto new_vert = model.biased_propose_vertex(state);
+                auto new_vert = model.reject_propose_vertex(state);
+                SampleVertex.stop();
 
-                    auto temp_state = std::make_pair(new_vert, new_vert);
+                auto temp_state = std::make_pair(new_vert, new_vert);
                     
                 // if (state.first == 4) {
                 //     std::cout << "state: " << state.first << " " << state.second << std::endl;
@@ -905,8 +906,17 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 // Then, change the current vertex in the new walk
                 current_vertex_new_walk = state.first;
             }
-
         });
+        
+
+        MergeWalk.start();
+        if (batch_num % config::merge_frequency == 0)
+        {
+            cout << "\n------ merge at batch---------" << batch_num << endl;
+            // TODO: 合并walk数据 太慢
+            // merge_walk_trees_all_vertices_parallel(batch_num); // ok merge all old nodes
+        }
+        MergeWalk.stop();
 
         // 合并walk 数据
 		using VertexStruct  = std::pair<types::Vertex, VertexEntry2>;
@@ -948,24 +958,9 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 		};
 
 		cout << "\n(insert) -- For batch-" << batch_num << " we are touching " << insert_walks.size() << " / " << number_of_vertices() << " vertices" << endl;
+        MergeGraph.start();
 		this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, insert_walks.begin(), insert_walks.size(), replaceI, true);
-
-
-        if (batch_num % config::merge_frequency == 0)
-        {
-            cout << "\n------ merge at batch---------" << batch_num << endl;
-            // TODO: 合并walk数据
-            // TODO: bugfix 无法合并tree
-            merge_walk_trees_all_vertices_parallel(batch_num); // ok merge all old nodes
-
-            std::cout << "merge_walk_trees_all_vertices_parallel" << std::endl;
-            // std::cout << "current walk squece: " << std::endl;
-            //     for (auto i = 0; i < this->graph_tree.size(); i++) {
-            //     std::cout << "src: " << i << ": ";
-            //     std::cout << this->walk_simple_find(i) << std::endl;
-            // }
-        }
-    
+        MergeGraph.stop();
     }
 
 
@@ -974,6 +969,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 	 * @brief Merges the walk-trees of each vertex in the hybrid-tree such that in the end each vertex has only one walk-tree
 	 */
 	// 合并walk tree
+    // TODO: 太慢 可以优化吗？
+    // TODO: all_to_delete size 固定
     void merge_walk_trees_all_vertices_parallel(int num_batches_so_far)
     {
         libcuckoo::cuckoohash_map<types::Vertex, std::vector<std::vector<types::PairedTriplet>>> all_to_delete; // let's use a vector
@@ -983,7 +980,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
         {
             int inc = 0;
 
-            auto triplets_to_delete_pbbs   = pbbs::new_array<std::vector<types::PairedTriplet>>(flat_graph[i].compressed_walks.size());
+            auto triplets_to_delete_pbbs    = pbbs::new_array<std::vector<types::PairedTriplet>>(flat_graph[i].compressed_walks.size());
             auto triplets_to_delete_vector = std::vector<std::vector<types::PairedTriplet>>();
 
             // traverse each walk-tree and find out the obsolete triplets and create corresponding "deletion" walk-trees
@@ -1023,15 +1020,15 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
                 triplets_to_delete_vector.push_back(triplets_to_delete_pbbs[inc]);
                 inc++;
-        }
+            }
 
-        // add the triplets to delete for this vertex in a hashmap
-        //  all_to_delete 也是一个map  vertex -> triplets 的 集合
-        if (!all_to_delete.contains(i))
+            // add the triplets to delete for this vertex in a hashmap
+            //  all_to_delete 也是一个map  vertex -> triplets 的 集合
+            if (!all_to_delete.contains(i))
                 all_to_delete.insert(i, std::vector<std::vector<types::PairedTriplet>>());
-            all_to_delete.update_fn(i, [&](auto& vector) {
-                vector = triplets_to_delete_vector;
-            });
+                all_to_delete.update_fn(i, [&](auto& vector) {
+                    vector = triplets_to_delete_vector;
+                });
         });
 
         auto temp_deletes = pbbs::sequence<std::pair<types::Vertex, std::vector<std::vector<types::PairedTriplet>>>>(all_to_delete.size());
@@ -1067,47 +1064,71 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             delete_walks[kkk] = std::make_pair(temp_deletes[kkk].first, VertexEntry2(types::CompressedEdges(),types::CompressedEdges(), vec_compwalks, new dygrl::SamplerManager(0)));
         });
 
-            // Sort the delete walks
-            pbbs::sample_sort_inplace(pbbs::make_range(delete_walks.begin(), delete_walks.end()), [&](auto& x, auto& y) {
-                return x.first < y.first;
-            });
+        // Sort the delete walks
+        pbbs::sample_sort_inplace(pbbs::make_range(delete_walks.begin(), delete_walks.end()), [&](auto& x, auto& y) {
+            return x.first < y.first;
+        });
 
-            auto replaceI = [&] (const uintV& src, const VertexEntry2& x, const VertexEntry2& y)
+        auto replaceI = [&] (const uintV& src, const VertexEntry2& x, const VertexEntry2& y)
+        {
+            assert(x.compressed_walks.size() == y.compressed_walks.size());
+            std::vector<dygrl::CompressedWalks> new_compressed_vector;
+            // for (auto ind = 0; ind < x.compressed_walks.size(); ind++)
+            // {
+            //     // return x / y
+            //     auto refined_walk_tree = walk_plus::difference(y.compressed_walks[ind], x.compressed_walks[ind], src);
+            //     new_compressed_vector.push_back(dygrl::CompressedWalks(refined_walk_tree.plus, refined_walk_tree.root, 666, 666, num_batches_so_far)); // use dummy min, max, batch_num for now
+
+            //     // deallocate the memory
+            //     lists::deallocate(x.compressed_walks[ind].plus);
+            //     walk_plus::Tree_GC::decrement_recursive(x.compressed_walks[ind].root);
+            //     lists::deallocate(y.compressed_walks[ind].plus);
+            //     walk_plus::Tree_GC::decrement_recursive(y.compressed_walks[ind].root);
+            // }
+
+            parallel_for(0, x.compressed_walks.size(), [&](auto ind)
             {
-                assert(x.compressed_walks.size() == y.compressed_walks.size());
-                std::vector<dygrl::CompressedWalks> new_compressed_vector;
-                for (auto ind = 0; ind < x.compressed_walks.size(); ind++)
-                {
-                    // return x / y
-                    auto refined_walk_tree = walk_plus::difference(y.compressed_walks[ind], x.compressed_walks[ind], src);
-                    new_compressed_vector.push_back(dygrl::CompressedWalks(refined_walk_tree.plus, refined_walk_tree.root, 666, 666, num_batches_so_far)); // use dummy min, max, batch_num for now
+                auto refined_walk_tree = walk_plus::difference(y.compressed_walks[ind], x.compressed_walks[ind], src);
+                new_compressed_vector.push_back(dygrl::CompressedWalks(refined_walk_tree.plus, refined_walk_tree.root, 666, 666, num_batches_so_far)); // use dummy min, max, batch_num for now
 
-                    // deallocate the memory
-                    lists::deallocate(x.compressed_walks[ind].plus);
-                    walk_plus::Tree_GC::decrement_recursive(x.compressed_walks[ind].root);
-                    lists::deallocate(y.compressed_walks[ind].plus);
-                    walk_plus::Tree_GC::decrement_recursive(y.compressed_walks[ind].root);
-                }
+                // deallocate the memory
+                lists::deallocate(x.compressed_walks[ind].plus);
+                walk_plus::Tree_GC::decrement_recursive(x.compressed_walks[ind].root);
+                lists::deallocate(y.compressed_walks[ind].plus);
+                walk_plus::Tree_GC::decrement_recursive(y.compressed_walks[ind].root);
+            });
+            // merge the refined walk-trees here
+            std::vector<dygrl::CompressedWalks> final_compressed_vector;
 
-                // merge the refined walk-trees here
-                std::vector<dygrl::CompressedWalks> final_compressed_vector;
+            final_compressed_vector.push_back(CompressedWalks(num_batches_so_far));
+            // for (auto ind = 0; ind < new_compressed_vector.size(); ind++)
+            // {
+            //     auto union_all_tree = walk_plus::uniont(new_compressed_vector[ind], final_compressed_vector[0], src);
 
-                final_compressed_vector.push_back(CompressedWalks(num_batches_so_far));
-                for (auto ind = 0; ind < new_compressed_vector.size(); ind++)
-                {
-                    auto union_all_tree = walk_plus::uniont(new_compressed_vector[ind], final_compressed_vector[0], src);
+            //     // deallocate the memory
+            //     lists::deallocate(new_compressed_vector[ind].plus);
+            //     walk_plus::Tree_GC::decrement_recursive(new_compressed_vector[ind].root);
+            //     lists::deallocate(final_compressed_vector[0].plus);
+            //     walk_plus::Tree_GC::decrement_recursive(final_compressed_vector[0].root);
 
-                    // deallocate the memory
-                    lists::deallocate(new_compressed_vector[ind].plus);
-                    walk_plus::Tree_GC::decrement_recursive(new_compressed_vector[ind].root);
-                    lists::deallocate(final_compressed_vector[0].plus);
-                    walk_plus::Tree_GC::decrement_recursive(final_compressed_vector[0].root);
+            //     final_compressed_vector[0] = dygrl::CompressedWalks(union_all_tree.plus, union_all_tree.root, 666, 666, num_batches_so_far);
+            // }
+            parallel_for(0, new_compressed_vector.size(), [&](auto ind)
+            {
+                auto union_all_tree = walk_plus::uniont(new_compressed_vector[ind], final_compressed_vector[0], src);
 
-                    final_compressed_vector[0] = dygrl::CompressedWalks(union_all_tree.plus, union_all_tree.root, 666, 666, num_batches_so_far);
-            }
+                // deallocate the memory
+                lists::deallocate(new_compressed_vector[ind].plus);
+                walk_plus::Tree_GC::decrement_recursive(new_compressed_vector[ind].root);
+                lists::deallocate(final_compressed_vector[0].plus);
+                walk_plus::Tree_GC::decrement_recursive(final_compressed_vector[0].root);
+
+                final_compressed_vector[0] = dygrl::CompressedWalks(union_all_tree.plus, union_all_tree.root, 666, 666, num_batches_so_far);
+            });
 
             return VertexEntry2(x.compressed_edges, x.compressed_weights, final_compressed_vector, x.sampler_manager);
         };
+
         this->graph_tree = Graph::Tree::multi_insert_sorted_with_values(this->graph_tree.root, delete_walks.begin(), delete_walks.size(), replaceI, true);
         return;
     }

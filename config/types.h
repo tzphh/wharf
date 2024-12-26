@@ -59,6 +59,12 @@ namespace types
         Vertex second;
     };
     
+    // sample method
+    enum class SampleMethod {
+        Naive,
+        Reject,
+        Reservoir
+    };
 }
 
 #endif

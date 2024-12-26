@@ -27,6 +27,8 @@ void get_walkpath(commandLine& command_line)
     bool biased_sample = command_line.getOption("-biased");
     config::biased_sampling = biased_sample;
     size_t chuck_size = command_line.getOptionIntValue("-chuck", 2);
+    size_t max_weight = command_line.getOptionIntValue("-maxweight", 100);
+    string sample_method = string(command_line.getOptionValue("-sample", "naive"));
 
 	if (merge_mode == "parallel")
 	{
@@ -105,12 +107,37 @@ void get_walkpath(commandLine& command_line)
     if (config::biased_sampling) {
         std::cout << "Biased sampling is enabled" << std::endl;
     }
+
+    config::weight_boundry = max_weight;
+    std::cout << "Max weight: " << config::weight_boundry << std::endl;
+
+    types::SampleMethod sample_method_type;
+    if (sample_method == "naive") 
+    {
+        sample_method_type = types::SampleMethod::Naive;
+    }
+    else if (sample_method == "reject")
+    {
+        sample_method_type = types::SampleMethod::Reject;
+    }
+    else if (sample_method == "reservoir")
+    {
+        sample_method_type = types::SampleMethod::Reservoir;
+    }
+    else
+    {
+        std::cerr << "Unrecognized sample method" << std::endl;
+    }
+    std::cout << "Sample method: " << sample_method << std::endl;
+    
     size_t n;
     size_t m;
     uintE* offsets;
     uintV* edges;
     uintW* weights;
+    std::cout << "Reading graph from " << fname << std::endl;
     std::tie(n, m, offsets, edges, weights) = read_weighted_graph(fname.c_str(), is_symmetric, mmap);
+    std::cout << "Graph has " << n << " vertices and " << m << " edges" << std::endl;
 
     // for (size_t i = 0; i < n; i++)
     // {
@@ -127,8 +154,7 @@ void get_walkpath(commandLine& command_line)
 
     auto graphflat = graph.flatten_graph();        // 更新快照
     
-    dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalk(&graphflat); 
-    // dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalkHybridSample(&graphflat, chuck_size); 
+    dygrl::RandomWalkModel* RWModel = new dygrl::DeepWalk(&graphflat, sample_method_type); 
 
     // generate initial random walks
     graph.generate_initial_random_walks(*RWModel);  
@@ -136,7 +162,7 @@ void get_walkpath(commandLine& command_line)
 
     // start generating streaming data
     std::cout << "start generating streaming data----" << std::endl;
-    int n_batches = num_of_batches;             // todo: how many batches per batch size?
+    int n_batches = num_of_batches;         // todo: how many batches per batch size?
 	auto batch_sizes = pbbs::sequence<size_t>(1);
 	batch_sizes[0] = half_of_bsize; //5000;
     int batch_seed[n_batches];
@@ -149,7 +175,9 @@ void get_walkpath(commandLine& command_line)
         size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
         // auto edges = utility::generate_edges_from_file(insert_fname + std::to_string(b), true);
         // auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); 
+        GenerateStream.start();
         auto edges = utility::generate_batch_of_edges(batch_sizes[0], n, batch_seed[b], false, false, true); // 生成插入的边,带权  
+        GenerateStream.stop();
         auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
     }
     RunTime.stop();
@@ -168,7 +196,9 @@ void get_walkpath(commandLine& command_line)
     std::cout << "SampleVertex time: " << SampleVertex.get_total() << std::endl;
     std::cout << "MergeGraph time: " << MergeGraph.get_total() << std::endl;
     std::cout << "RebuildSampleStructure time: " << RebuildSampleStructure.get_total() << std::endl;
- 
+    std::cout << "GenerateStream time: " << GenerateStream.get_total() << std::endl;
+    std::cout << "MergeWalkTrees time: " << MergeWalk.get_total() << std::endl;
+    // std::cout << "WalkUpdate time: " << WalkUpdate.get_total() << std::endl;
 }
 
 int main(int argc, char** argv)
