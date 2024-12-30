@@ -18,63 +18,33 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
     class DeepWalk : public RandomWalkModel
     {
         public:
-            /**
-             * @brief DeepWalk constructor.
-             *
-             * @param snapshot - graph snapshot
-             */
             explicit DeepWalk(dygrl::FlatGraph2* snapshot, types::SampleMethod method)
             {
                 this->snapshot = snapshot;
                 this->alias_table.resize(0);
                 seed = new RandNum(9898676785859);
-                this->sample_method = method;
+                this->alias_prefix.resize(0);
+                this->alias_table2.resize(0);
+                this->chunckSize = config::chunk_size;
+                // this->sample_method = method;
             }
 
-            /**
-            * @brief DeepWalk destructor.
-            */
             ~DeepWalk()
             {
                 this->alias_table.clear();
                 if (!this->snapshot)
                     delete this->snapshot;
             }
-
-            /**
-            * @brief Determines an initial state of the walker.
-            *
-            * @param vertex - graph vertex
-            *
-            * @return - an initial state of the walker
-            */
             types::State initial_state(types::Vertex vertex) final
             {
                 return types::State(vertex, vertex);
             }
 
-            /**
-            * @brief The transition of states is crucial for the walking.
-            * Based on the next vertex and the current state we update the state.
-            *
-            * @param state  - current state of the walker
-            * @param vertex - next vertex to go
-            *
-            * @return - a new state of the walker
-            */
             types::State new_state(const types::State& state, types::Vertex vertex) final
             {
                 return types::State(vertex, vertex);
             }
 
-            /**
-            * @brief Calculates the edge weight based on the current state and the potentially proposed vertex.
-            *
-            * @param state  - current state of the walker
-            * @param vertex - potentially proposed vertex
-            *
-            * @return - dynamically calculated weight
-            */
             float weight(const types::State& state, types::Vertex vertex) final
             {
                 return 1.0;
@@ -87,74 +57,64 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             *
             * @return - proposed vertex
             */
-            types::Vertex propose_vertex(const types::State& state) final
+            types::Vertex propose_vertex(const types::State& state, const types::SampleMethod& method = types::SampleMethod::Naive) final
             {
-                auto random                = utility::Random(std::time(nullptr));
-                auto neighbors = this->snapshot->neighbors(state.first);   // 三元组 (邻居数组, 邻居数, 是否需要释放内存)
-                // auto vertex    = std::get<0>(neighbors)[config::random.irand(std::get<1>(neighbors))];  // todo: check 度数是否为0
-                // degree为0时下一跳为源顶点
-                auto vertex    = std::get<1>(neighbors) == 0 ? state.first : std::get<0>(neighbors)[random.irand(std::get<1>(neighbors))];  
-                
-
-                if (std::get<2>(neighbors)) pbbs::free_array(std::get<0>(neighbors));
-
-                return vertex;
+                switch (method)
+                {
+                    case types::SampleMethod::Alias:
+                        return this->biased_propose_vertex(state);
+                    case types::SampleMethod::Reject:
+                        return this->reject_propose_vertex(state);
+                    case types::SampleMethod::Reservoir:
+                        return this->reservoir_propose_vertex(state);
+                    case types::SampleMethod::Chunk:
+                        return this->chunk_propose_vertex(state);
+                    default:
+                        return this->naive_propose_vertex(state);
+                }
+                return 0;
             }
 
-            /**
-            * @brief Biased propose next vertex given current state.
-            *
-            * @param state - current walker state
-            *
-            * @return - proposed vertex
-            */
-            // 别名cia
-            types::Vertex biased_propose_vertex(const types::State& state) final
+            types::Vertex naive_propose_vertex(const types::State& state) 
             {
-                // assert(this->alias_table.size() == this->snapshot->size());
-                //auto neighbors = this->snapshot->neighbors2(state.first);   
-
-                // auto
-                // auto neightors = this->snapshot[state.first].neighbors2;
-
                 auto neighbors = this->snapshot->neighbors2(state.first);
-
+                const auto& neighbor_list = std::get<0>(neighbors);
                 auto degree = std::get<2>(neighbors);
                 auto vertex = state.first;
-                
-                // std::cout <<"current vert is" << state.first << std::endl;
 
                 if (degree == 0) {
-                    // cout << "degree is 0" << endl;
-                    // std::cout <<"current vert is" << state.first << " ,sample " << vertex << ::endl;
                     return vertex;
                 }
-                // auto random                = utility::Random(std::time(nullptr));
                 auto pos =  seed->iRand(static_cast<uint32_t>(degree));
-                auto prob = seed->dRand();
-
-
-                // std::cout << "current vertex is" << vertex << std::endl;
-                // std::cout << state.first <<" pos: " << pos << " prob  "<<prob << std::endl;
-                // for (size_t i = 0; i < degree; i++) {
-                //     std::cout << "neighbor is " << std::get<0>(neighbors)[i] << " weight is" <<std::get<1>(neighbors)[i]<<std::endl;
-                // }
-
-                
-                if (prob <= alias_table[state.first][pos].probability) {
-                    vertex = std::get<0>(neighbors)[pos];     
-                } else {
-                    vertex = alias_table[state.first][pos].second;
-                }
-
-                //std::cout << "current sample vertex is" << vertex << std::endl;
-                // std::cout <<"current vert is" << state.first << " ,sample " << vertex << ::endl;
-                return vertex;
+                return neighbor_list[pos];
             }
 
 
+            types::Vertex biased_propose_vertex(const types::State& state) 
+            {
+                auto neighbors = this->snapshot->neighbors2(state.first);
+                auto degree = std::get<2>(neighbors);
+                auto vertex = state.first;
 
-            types::Vertex reject_propose_vertex(const types::State& state) final 
+                if (degree == 0) {
+                    return vertex;
+                }
+
+                auto& neighbor_list = std::get<0>(neighbors);
+                auto pos =  seed->iRand(static_cast<uint32_t>(degree));
+                auto prob = seed->dRand();
+                
+                auto& alias_entry = alias_table[state.first][pos];
+                if (prob <= alias_entry.probability) {
+                    vertex = neighbor_list[pos];     
+                } else {
+                    vertex = alias_entry.second;
+                }
+
+                return vertex;
+            }
+
+            types::Vertex reject_propose_vertex(const types::State& state) 
             {
                 // seed = new RandNum(742429651);
                 auto neighbors = this->snapshot->neighbors2(state.first);
@@ -168,7 +128,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 auto pos =  seed->iRand(static_cast<uint32_t>(degree));
                 auto rej =  seed->iRand(static_cast<uint32_t>(config::weight_boundry));
                 while (true) {
-                    if (rej < std::get<1>(neighbors)[pos]) {
+                    if (rej < weight::get_weight(std::get<1>(neighbors)[pos])) {
                         return std::get<0>(neighbors)[pos];
                     } 
                     else {
@@ -176,24 +136,86 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                         rej =  seed->iRand(static_cast<uint32_t>(config::weight_boundry));
                     }
                 }
-
                 return 0;
             }
 
-            virtual types::Vertex reservoir_propose_vertex(const types::State& state) final
+            virtual types::Vertex reservoir_propose_vertex(const types::State& state) 
             {
-                return 0;
+                const auto neighbors = this->snapshot->neighbors2(state.first);
+                const auto& neighbor_list = std::get<0>(neighbors);
+                const auto& weight_list = std::get<0>(neighbors);
+                const auto degree = std::get<2>(neighbors);
+                auto vertex = state.first;
+
+                if (degree == 0) {
+                    return vertex;
+                }
+                types::Weight sum = weight::get_weight(weight_list[0]);
+                size_t candidate = 0;
+                for (size_t i = 1; i < degree; i++) {
+                    sum += weight::get_weight(weight_list[i]);
+                    auto r = seed->dRand();
+                    r = seed->dRand();
+                    auto prob = static_cast<double>(weight::get_weight(weight_list[i])) / sum;
+                    if (r < prob) {
+                        candidate = i;
+                        break;
+                    }
+                }
+
+                return neighbor_list[candidate];
+            }
+
+
+            types::Vertex chunk_propose_vertex(const types::State& state) 
+            {
+                auto neighbors = this->snapshot->neighbors2(state.first);   
+                auto degree = std::get<2>(neighbors);
+                auto vertex = state.first;
+                if (degree == 0) {
+                    return vertex;
+                }
+                
+                auto total_weight = this->alias_prefix[vertex].back();
+                if (total_weight == 0) {
+                    return vertex;
+                }
+                
+                uintV chunckCur = degree;
+                auto off = 0;
+                uintV abs = 0;
+                if (degree > chunckSize) {
+                    abs= seed->iRand(static_cast<uint32_t>(total_weight));
+                    auto poss = std::upper_bound(this->alias_prefix[vertex].begin(), this->alias_prefix[vertex].end(), abs);
+                    off = static_cast<uintV>(std::distance(this->alias_prefix[vertex].begin(), poss - 1));
+                    chunckCur = std::min(chunckSize, degree - (off * chunckSize));
+                }
+
+                uintV pos = seed->iRand(static_cast<uint32_t>(chunckCur));
+                auto prob = seed->dRand();
+
+                if (off >= this->alias_table2[vertex].size()) {
+                    return vertex;
+                }
+                if (prob <= alias_table2[state.first][off][pos].probability) {
+                    vertex = std::get<0>(neighbors)[pos + off * chunckSize];     
+                } else {
+                    vertex = alias_table2[state.first][off][pos].second;
+                }
+                return vertex;
             }
             /**
              * @brief Build total alias table
              */
-            void build_sample_structure() final
+            void build_sample_structure() 
             {
                 auto nverts = this->snapshot->size();
                 this->alias_table.resize(nverts);
-
+                this->alias_table2.resize(nverts);
+                this->alias_prefix.resize(nverts);
                 parallel_for(0, nverts, [&](size_t i) {
                     this->build_sample_structure_single(i);
+                    this->build_sample_structure_single2(i);
                 });
             
                 return;
@@ -206,7 +228,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
 
 
             // TODO:debug 生成别名表有问题
-            void build_sample_structure_single(size_t vert_id) final
+            void build_sample_structure_single(size_t vert_id) 
             {
                 std::vector<prob> probabilities;
                 std::vector<prob> real_weights;
@@ -295,10 +317,97 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return;
             }
 
+
+
+            void build_sample_structure_single2(size_t vert_id) 
+            {
+                uintV chunckCnt = 0;
+                uintV chunkCur = 0;
+                std::vector<prob> probabilities;
+                std::vector<prob> prefix_weights;
+                std::vector<prob> real_weights;
+                std::vector<uintV> smaller, larger;
+
+                auto neighbors = this->snapshot->neighbors2(vert_id);
+                auto edges = std::get<0>(neighbors);
+                auto weights = std::get<1>(neighbors);
+                auto degree = std::get<2>(neighbors);
+                prob totalWeight = 0.0;
+
+                if (degree == 0) return;
+                probabilities.resize(degree);
+                prefix_weights.resize(degree + 1);  // weights[i] = prefix_weights[i + 1] - prefix_weights[i];
+                real_weights.resize(degree);
+                prefix_weights[0] = 0;
+
+                this->alias_prefix[vert_id].resize(0);
+
+                for (size_t i = 0; i < degree; i++) {
+                    prefix_weights[i + 1] = prefix_weights[i] + weight::get_weight(weights[i]);
+                    real_weights[i] = weight::get_weight(weights[i]);
+                }
+                chunckCnt = (degree / chunckSize) + 1;
+                this->alias_prefix[vert_id].push_back(0);
+                for (size_t i = 0; i < chunckCnt - 1; i++) {
+                    this->alias_prefix[vert_id].push_back(alias_prefix[vert_id].back() + std::accumulate(real_weights.begin() + chunckSize * i, real_weights.begin() + chunckSize * (i + 1), 0));
+                }
+                this->alias_prefix[vert_id].push_back(alias_prefix[vert_id].back() + std::accumulate(real_weights.begin() + chunckSize * (chunckCnt - 1), real_weights.end(), 0));
+
+                this->alias_table2[vert_id].resize(chunckCnt);
+                for (size_t j = 0; j < chunckCnt; j++) {
+                    chunkCur = std::min(chunckSize, degree - (j * chunckSize));
+                    totalWeight = alias_prefix[vert_id][j + 1] - alias_prefix[vert_id][j];
+                    probabilities.resize(chunkCur);
+                    alias_table2[vert_id][j].resize(chunkCur);
+
+                    for (size_t i = 0; i < chunkCur; ++i) {  
+                        probabilities[i] = weight::get_weight(weights[j * chunckSize + i]) / totalWeight;
+                    }
+                    for (size_t i = 0; i < chunkCur; ++i) {
+                        this->alias_table2[vert_id][j][i].probability = probabilities[i] * chunkCur;
+                        this->alias_table2[vert_id][j][i].second = 0;
+                        if (this->alias_table2[vert_id][j][i].probability < 1.0)
+                            smaller.push_back(i);
+                        else
+                            larger.push_back(i);
+                    }
+                    while (!smaller.empty() && !larger.empty()) {
+                        uintV small = smaller.back();
+                        smaller.pop_back();
+                        uintV large = larger.back();
+                        larger.pop_back();
+                        this->alias_table2[vert_id][j][small].second = edges[large + j * chunckSize];
+                        this->alias_table2[vert_id][j][large].probability -= (1.0 - this->alias_table2[vert_id][j][small].probability);
+                        if (this->alias_table2[vert_id][j][large].probability < 1.0)
+                            smaller.push_back(large);
+                        else
+                            larger.push_back(large);
+                    }
+
+                    while (!larger.empty()) {
+                        int top = larger.back();
+                        larger.pop_back();
+                            this->alias_table2[vert_id][j][top].probability = 1.0;
+                    }
+                    while (!smaller.empty()) {
+                        int top = smaller.back();
+                        smaller.pop_back();
+                        this->alias_table2[vert_id][j][top].probability = 1.0;
+                    }
+                    probabilities.clear();
+                    larger.clear();
+                    smaller.clear();
+                }
+            }
+
+
         private:
             FlatGraph2* snapshot;
             std::vector<std::vector<types::AliasTable>> alias_table;
             RandNum *seed;
+            std::vector<std::vector<std::vector<types::AliasTable>>> alias_table2;
+            std::vector<std::vector<types::Weight>> alias_prefix;
+            types::Vertex chunckSize;
             // config::SamplerMethod *sampler_type;
     };
 }

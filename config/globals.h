@@ -10,7 +10,7 @@ namespace config
     uint8_t walks_per_vertex   = 1;
 
     // determines the length of one random walk
-    uint8_t walk_length        = 20;
+    uint8_t walk_length        = 80;
 
     // determines the type of random walk model to use
     auto random_walk_model     = types::RandomWalkModelType::DEEPWALK;
@@ -51,7 +51,11 @@ namespace config
     // max batch num in this graph
     size_t max_batch_num    = 50;
 
+    // sample strategy
+    types::SampleMethod sample_method = types::SampleMethod::Naive;
 
+    // chunk size
+    size_t chunk_size = 8;
 }
 
 #endif

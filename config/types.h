@@ -63,7 +63,9 @@ namespace types
     enum class SampleMethod {
         Naive,
         Reject,
-        Reservoir
+        Reservoir,
+        Alias,
+        Chunk
     };
 }
 

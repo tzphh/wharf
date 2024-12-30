@@ -36,7 +36,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 // }
 
                 // 1. propose new candidate and calculate weights
-                auto candidate_sample = biased_sample ? model->biased_propose_vertex(state) : model->propose_vertex(state);  
+                auto candidate_sample = model->propose_vertex(state);  
                 
                 // float new_weight = model->weight(state, candidate_sample); 
                 // float previous_weight = model->weight(state, this->last_sampled_vertex); 

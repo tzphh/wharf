@@ -96,10 +96,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             *
             * @return - proposed vertex
             */
-            types::Vertex propose_vertex(const types::State& state) final
+            types::Vertex propose_vertex(const types::State& state, const types::SampleMethod& method = types::SampleMethod::Naive) final
             {
                 auto neighbors = this->snapshot->neighbors(state.first);
-                auto random                = utility::Random(std::time(nullptr));
+                auto random    = utility::Random(std::time(nullptr));
                 auto vertex    = std::get<0>(neighbors)[random.irand(std::get<1>(neighbors))];
 
                 if (std::get<2>(neighbors)) pbbs::free_array(std::get<0>(neighbors));

@@ -12,19 +12,27 @@
                 //"-f", "/home/tzp/workspace/wharf/experiments/data/cora/cora.txt"
                 // "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.txt"
 
-                "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.origin",
-                // "-if", "/home/tzp/workspace/wharf/experiments/data/toy/toy.insert",
-                "-nb", "10",
-                "-w", "1",
-                // "-bs", "100",  
-                // "-l", "80",
-                "-biased"
-
+                // "-f", "/home/tzp/workspace/wharf/experiments/data/toy/toy.origin",
+                // // "-if", "/home/tzp/workspace/wharf/experiments/data/toy/toy.insert",
+                // "-nb", "10",
+                // "-w", "1",
+                // // "-bs", "100",  
+                // // "-l", "80",
+                // "-biased"
+                
+                
 
 
                 // "-f", "/home/tzp/dataset/soc/soc-livejournal.txt1",
                 // "-nb", "3"
-
+                "-f", "/home/tzp/dataset/soc/soc-livejournal.txt.weighted",
+                "-l", "80",
+                "-w", "10", 
+                "-maxweight", "1000000",
+                "-biased",
+                // "-sample", "reservoir"
+                // "-sample", "alias"
+                "-sample", "chunk"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

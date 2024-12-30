@@ -1,5 +1,6 @@
 #include <stgraph.h>
 // #include <models/deepwalk.h>
+#include <models/deepwalk.h>
 #include <models/deepwalk_hybrid_sample.h>
 void get_walkpath(commandLine& command_line)
 {
@@ -26,7 +27,7 @@ void get_walkpath(commandLine& command_line)
 	string merge_mode       = string(command_line.getOptionValue("-mergemode", "parallel"));
     bool biased_sample = command_line.getOption("-biased");
     config::biased_sampling = biased_sample;
-    size_t chuck_size = command_line.getOptionIntValue("-chuck", 2);
+    size_t chuck_size = command_line.getOptionIntValue("-chuck", 8);
     size_t max_weight = command_line.getOptionIntValue("-maxweight", 100);
     string sample_method = string(command_line.getOptionValue("-sample", "naive"));
 
@@ -124,11 +125,21 @@ void get_walkpath(commandLine& command_line)
     {
         sample_method_type = types::SampleMethod::Reservoir;
     }
+    else if (sample_method == "alias")
+    {
+        sample_method_type = types::SampleMethod::Alias;
+    }
+    else if (sample_method == "chunk")
+    {
+        sample_method_type = types::SampleMethod::Chunk;
+        config::chunk_size = chuck_size;
+    }
     else
     {
         std::cerr << "Unrecognized sample method" << std::endl;
     }
     std::cout << "Sample method: " << sample_method << std::endl;
+    config::sample_method = sample_method_type;
     
     size_t n;
     size_t m;
@@ -139,14 +150,7 @@ void get_walkpath(commandLine& command_line)
     std::tie(n, m, offsets, edges, weights) = read_weighted_graph(fname.c_str(), is_symmetric, mmap);
     std::cout << "Graph has " << n << " vertices and " << m << " edges" << std::endl;
 
-    // for (size_t i = 0; i < n; i++)
-    // {
-    //     std::cout << "Vertex " << i << " has " << offsets[i + 1] - offsets[i] << " neighbors" << std::endl;
-    // }
-    // for (size_t i = 0; i < m; i++)
-    // {
-    //     std::cout << "Edge " << i << ": " << edges[i] << " " << weights[i] << std::endl;
-    // }
+ 
     RunTime.start();
 
     dygrl::STGraph graph = dygrl::STGraph(n, m, offsets, edges, weights);
@@ -161,26 +165,26 @@ void get_walkpath(commandLine& command_line)
 
 
     // start generating streaming data
-    std::cout << "start generating streaming data----" << std::endl;
-    int n_batches = num_of_batches;         // todo: how many batches per batch size?
-	auto batch_sizes = pbbs::sequence<size_t>(1);
-	batch_sizes[0] = half_of_bsize; //5000;
-    int batch_seed[n_batches];
-    for (auto i = 0; i < batch_sizes.size(); i++) {
-        batch_seed[i] = i;
-    }
-    for (short int b = 0; b < n_batches; b++)
-    {
-        cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
-        size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
-        // auto edges = utility::generate_edges_from_file(insert_fname + std::to_string(b), true);
-        // auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges).data(), std::get<2>(edges).data(), b+1,*RWModel, false, true, graph_size_pow2 ); 
-        GenerateStream.start();
-        auto edges = utility::generate_batch_of_edges(batch_sizes[0], n, batch_seed[b], false, false, true); // 生成插入的边,带权  
-        GenerateStream.stop();
-        auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), std::get<2>(edges), b+1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
-    }
-    RunTime.stop();
+    // std::cout << "start generating streaming data----" << std::endl;
+    // int n_batches = num_of_batches;         // todo: how many batches per batch size?
+	// auto batch_sizes = pbbs::sequence<size_t>(1);
+	// batch_sizes[0] = half_of_bsize; //5000;
+    // int batch_seed[n_batches];
+    // for (auto i = 0; i < n_batches; i++) {
+    //     batch_seed[i] = i;
+    // }
+    // for (short int b = 0; b < n_batches; b++)
+    // {
+    //     cout << "batch-" << b << " and batch_seed-" << batch_seed[b] << endl;
+    //     size_t graph_size_pow2 = 1 << (pbbs::log2_up(n) - 1);
+
+    //     GenerateStream.start();
+    //     auto edges = utility::generate_batch_of_edges(batch_sizes[0], n, batch_seed[b], false, false, true); // 生成插入的边,带权  
+    //     GenerateStream.stop();
+
+    //     auto x = graph.insert_edges_batch(std::get<1>(edges), std::get<0>(edges), std::get<2>(edges), b + 1,*RWModel, false, true, graph_size_pow2 ); // pass the batch number as well
+    // }
+    // RunTime.stop();
 
 // auto MAVTime                    = timer("MAVTime", false);
 // auto RunTime = timer("RunTime", false);
