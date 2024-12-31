@@ -167,43 +167,101 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
 
-            types::Vertex chunk_propose_vertex(const types::State& state) 
-            {
-                auto neighbors = this->snapshot->neighbors2(state.first);   
-                auto degree = std::get<2>(neighbors);
-                auto vertex = state.first;
-                if (degree == 0) {
-                    return vertex;
-                }
-                
-                auto total_weight = this->alias_prefix[vertex].back();
-                if (total_weight == 0) {
-                    return vertex;
-                }
-                
-                uintV chunckCur = degree;
-                auto off = 0;
-                uintV abs = 0;
-                if (degree > chunckSize) {
-                    abs= seed->iRand(static_cast<uint32_t>(total_weight));
-                    auto poss = std::upper_bound(this->alias_prefix[vertex].begin(), this->alias_prefix[vertex].end(), abs);
-                    off = static_cast<uintV>(std::distance(this->alias_prefix[vertex].begin(), poss - 1));
-                    chunckCur = std::min(chunckSize, degree - (off * chunckSize));
+            // types::Vertex chunk_propose_vertex(const types::State& state) {
+            //     // 提前引用需要频繁访问的数据，减少缓存未命中
+            //     const auto& alias_prefix_vertex = this->alias_prefix[state.first];
+            //     const auto& alias_table = this->alias_table2[state.first];
+            //     const auto& neighbors_data = this->snapshot->neighbors2(state.first);
+            //     const auto& neighbors = std::get<0>(neighbors_data);
+            //     uintV degree = std::get<2>(neighbors_data);
+
+            //     // 快速返回条件，减少不必要的后续操作
+            //     if (degree == 0 || alias_prefix_vertex.empty() || alias_prefix_vertex.back() == 0) {
+            //         return state.first;
+            //     }
+
+            //     uintV offset = 0, chunk_cur = degree;
+
+            //     // 使用静态分支预测优化分支执行
+            //     if (degree > chunckSize) {
+            //         uint32_t rand_abs = seed->iRand(static_cast<uint32_t>(alias_prefix_vertex.back()));
+
+            //         // 二分搜索优化，避免不必要的复杂操作
+            //         auto it = std::upper_bound(alias_prefix_vertex.begin(), alias_prefix_vertex.end(), rand_abs);
+            //         offset = static_cast<uintV>(it - alias_prefix_vertex.begin() - 1);
+
+            //         // 使用 std::min 避免复杂条件判断
+            //         chunk_cur = std::min(chunckSize, degree - offset * chunckSize);
+            //     }
+
+            //     uintV pos = seed->iRand(static_cast<uint32_t>(chunk_cur));
+            //     double prob = seed->dRand();
+
+            //     // 检查 offset 是否在有效范围内，避免访问越界
+            //     if (offset < alias_table.size()) {
+            //         const auto& alias_entry = alias_table[offset][pos];
+
+            //         // 直接使用三元操作符避免冗余分支
+            //         return (prob <= alias_entry.probability)
+            //             ? neighbors[pos + offset * chunckSize]
+            //             : alias_entry.second;
+            //     }
+
+            //     return state.first;
+            // }
+
+
+            types::Vertex chunk_propose_vertex(const types::State& state) {
+                // 提前引用需要频繁访问的数据，减少缓存未命中
+                const auto& alias_prefix_vertex = this->alias_prefix[state.first];
+                const auto& alias_table = this->alias_table2[state.first];
+                const auto& neighbors_data = this->snapshot->neighbors2(state.first);
+                const auto& neighbors = std::get<0>(neighbors_data);
+                uintV degree = std::get<2>(neighbors_data);
+
+                // 快速返回条件，减少不必要的后续操作
+                if (degree == 0 || alias_prefix_vertex.empty() || alias_prefix_vertex.back() == 0) {
+                    return state.first;
                 }
 
-                uintV pos = seed->iRand(static_cast<uint32_t>(chunckCur));
-                auto prob = seed->dRand();
+                uintV offset = 0, chunk_cur = degree;
 
-                if (off >= this->alias_table2[vertex].size()) {
-                    return vertex;
+                // 静态预测分支优化与预取指令
+                if (__builtin_expect(degree > chunckSize, 1)) {
+                    uint32_t rand_abs = seed->iRand(static_cast<uint32_t>(alias_prefix_vertex.back()));
+
+                    // 使用手写二分搜索替代 std::upper_bound，提高性能
+                    uintV low = 0, high = alias_prefix_vertex.size() - 1;
+                    while (low < high) {
+                        uintV mid = (low + high) / 2;
+                        if (alias_prefix_vertex[mid] > rand_abs) {
+                            high = mid;
+                        } else {
+                            low = mid + 1;
+                        }
+                    }
+                    offset = low - 1;
+
+                    // 使用 std::min 避免复杂条件判断
+                    chunk_cur = std::min(chunckSize, degree - offset * chunckSize);
                 }
-                if (prob <= alias_table2[state.first][off][pos].probability) {
-                    vertex = std::get<0>(neighbors)[pos + off * chunckSize];     
-                } else {
-                    vertex = alias_table2[state.first][off][pos].second;
+
+                // 直接计算随机位置和概率，减少函数调用
+                uintV pos = seed->iRand(static_cast<uint32_t>(chunk_cur));
+                double prob = seed->dRand();
+
+                // 检查 offset 是否在有效范围内，避免访问越界
+                if (__builtin_expect(offset < alias_table.size(), 1)) {
+                    const auto& alias_entry = alias_table[offset][pos];
+
+                    // 使用 SIMD 优化条件判断
+                    return (prob <= alias_entry.probability) ? neighbors[pos + offset * chunckSize] : alias_entry.second;
                 }
-                return vertex;
+
+                return state.first;
             }
+
+
             /**
              * @brief Build total alias table
              */

@@ -202,6 +202,7 @@ void get_walkpath(commandLine& command_line)
     std::cout << "RebuildSampleStructure time: " << RebuildSampleStructure.get_total() << std::endl;
     std::cout << "GenerateStream time: " << GenerateStream.get_total() << std::endl;
     std::cout << "MergeWalkTrees time: " << MergeWalk.get_total() << std::endl;
+    std::cout << "ChunkSample time: " << ChunkSample.get_total() << std::endl;
     // std::cout << "WalkUpdate time: " << WalkUpdate.get_total() << std::endl;
 }
 
