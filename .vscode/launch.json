@@ -26,13 +26,13 @@
                 // "-f", "/home/tzp/dataset/soc/soc-livejournal.txt1",
                 // "-nb", "3"
                 "-f", "/home/tzp/dataset/soc/soc-livejournal.txt.weighted",
-                "-l", "80",
-                "-w", "10", 
-                "-maxweight", "1000000",
+                "-l", "30",
+                "-w", "1", 
+                "-maxweight", "100",
                 "-biased",
                 // "-sample", "reservoir"
                 // "-sample", "alias"
-                "-sample", "chunk"
+                "-sample", "its"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

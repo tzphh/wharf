@@ -134,6 +134,10 @@ void get_walkpath(commandLine& command_line)
         sample_method_type = types::SampleMethod::Chunk;
         config::chunk_size = chuck_size;
     }
+    else if (sample_method == "its")
+    {
+        sample_method_type = types::SampleMethod::Its;
+    }   
     else
     {
         std::cerr << "Unrecognized sample method" << std::endl;

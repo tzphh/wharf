@@ -65,7 +65,8 @@ namespace types
         Reject,
         Reservoir,
         Alias,
-        Chunk
+        Chunk,
+        Its
     };
 }
 

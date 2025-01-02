@@ -69,6 +69,8 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                         return this->reservoir_propose_vertex(state);
                     case types::SampleMethod::Chunk:
                         return this->chunk_propose_vertex(state);
+                    case types::SampleMethod::Its:
+                        return this->its_propose_vertex(state);
                     default:
                         return this->naive_propose_vertex(state);
                 }
@@ -166,51 +168,6 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return neighbor_list[candidate];
             }
 
-
-            // types::Vertex chunk_propose_vertex(const types::State& state) {
-            //     // 提前引用需要频繁访问的数据，减少缓存未命中
-            //     const auto& alias_prefix_vertex = this->alias_prefix[state.first];
-            //     const auto& alias_table = this->alias_table2[state.first];
-            //     const auto& neighbors_data = this->snapshot->neighbors2(state.first);
-            //     const auto& neighbors = std::get<0>(neighbors_data);
-            //     uintV degree = std::get<2>(neighbors_data);
-
-            //     // 快速返回条件，减少不必要的后续操作
-            //     if (degree == 0 || alias_prefix_vertex.empty() || alias_prefix_vertex.back() == 0) {
-            //         return state.first;
-            //     }
-
-            //     uintV offset = 0, chunk_cur = degree;
-
-            //     // 使用静态分支预测优化分支执行
-            //     if (degree > chunckSize) {
-            //         uint32_t rand_abs = seed->iRand(static_cast<uint32_t>(alias_prefix_vertex.back()));
-
-            //         // 二分搜索优化，避免不必要的复杂操作
-            //         auto it = std::upper_bound(alias_prefix_vertex.begin(), alias_prefix_vertex.end(), rand_abs);
-            //         offset = static_cast<uintV>(it - alias_prefix_vertex.begin() - 1);
-
-            //         // 使用 std::min 避免复杂条件判断
-            //         chunk_cur = std::min(chunckSize, degree - offset * chunckSize);
-            //     }
-
-            //     uintV pos = seed->iRand(static_cast<uint32_t>(chunk_cur));
-            //     double prob = seed->dRand();
-
-            //     // 检查 offset 是否在有效范围内，避免访问越界
-            //     if (offset < alias_table.size()) {
-            //         const auto& alias_entry = alias_table[offset][pos];
-
-            //         // 直接使用三元操作符避免冗余分支
-            //         return (prob <= alias_entry.probability)
-            //             ? neighbors[pos + offset * chunckSize]
-            //             : alias_entry.second;
-            //     }
-
-            //     return state.first;
-            // }
-
-
             types::Vertex chunk_propose_vertex(const types::State& state) {
                 // 提前引用需要频繁访问的数据，减少缓存未命中
                 const auto& alias_prefix_vertex = this->alias_prefix[state.first];
@@ -262,20 +219,65 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
 
+            types::Vertex its_propose_vertex(const types::State& state) {
+                // 提前引用需要频繁访问的数据，减少缓存未命中
+                const auto& neighbors_data = this->snapshot->neighbors(state.first);
+                const auto& weight_prefix_table = this->weight_prefix[state.first];
+                const auto& neighbors = std::get<0>(neighbors_data);
+                const auto degree = std::get<1>(neighbors_data);
+                auto vertex = state.first;
+
+                if (degree == 0) {
+                    return vertex;
+                }
+
+                auto total_weight = weight_prefix_table.back();
+                auto rand_abs = seed->iRand(static_cast<uint32_t>(total_weight));
+                auto abs = std::lower_bound(weight_prefix_table.begin(), weight_prefix_table.end(), rand_abs);
+                auto pos = static_cast<size_t>(std::distance(weight_prefix_table.begin(), abs - 1));
+                
+                return neighbors[pos];
+            }
+
             /**
              * @brief Build total alias table
              */
             void build_sample_structure() 
             {
                 auto nverts = this->snapshot->size();
-                this->alias_table.resize(nverts);
-                this->alias_table2.resize(nverts);
-                this->alias_prefix.resize(nverts);
-                parallel_for(0, nverts, [&](size_t i) {
-                    this->build_sample_structure_single(i);
-                    this->build_sample_structure_single2(i);
-                });
-            
+
+                switch (config::sample_method) 
+                {
+                    case types::SampleMethod::Alias:
+                    {
+                        this->alias_table.resize(nverts);
+                        parallel_for(0, nverts, [&](size_t i) {
+                            this->build_sample_structure_single(i);
+                        });
+                        break;
+                    }
+                    case types::SampleMethod::Chunk:
+                    {
+                        this->alias_table2.resize(nverts);
+                        this->alias_prefix.resize(nverts);
+                        parallel_for(0, nverts, [&](size_t i) {
+                            this->build_sample_structure_single2(i);
+                        });
+                        break;
+                    }
+                    case types::SampleMethod::Its:
+                    {
+                        this->weight_prefix.resize(nverts);
+                        parallel_for(0, nverts, [&](size_t i) {
+                            this->build_sample_structure_single3(i);
+                        });
+                        break;
+                    }
+                    default:
+                    {
+                        break;
+                    }
+                }
                 return;
             }
 
@@ -283,9 +285,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
              * @brief Build alias table for a vertex
              * @param vertex Vertex to build alias table for
              */
-
-
-            // TODO:debug 生成别名表有问题
+            // for alias sample
             void build_sample_structure_single(size_t vert_id) 
             {
                 std::vector<prob> probabilities;
@@ -362,10 +362,10 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
                 return;
             }
 
-             std::vector<std::vector<types::AliasTable>>& get_alias_table() 
-             {
+            std::vector<std::vector<types::AliasTable>>& get_alias_table() 
+            {
                 return this->alias_table;
-             }
+            }
 
             void update_snapshot(dygrl::FlatGraph2* snapshot) 
             {
@@ -376,7 +376,7 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
 
-
+            // for chunk sample
             void build_sample_structure_single2(size_t vert_id) 
             {
                 uintV chunckCnt = 0;
@@ -459,14 +459,37 @@ namespace dynamic_graph_representation_learning_with_metropolis_hastings
             }
 
 
+            // for its sample
+            void build_sample_structure_single3(size_t vert_id) 
+            {
+                auto neighbors = this->snapshot->neighbors2(vert_id);
+                // auto edges = std::get<0>(neighbors);
+                auto weights = std::get<1>(neighbors);
+                auto degree = std::get<2>(neighbors);
+
+                std::vector<types::Weight> real_weights(degree, 0);
+                parallel_for(0, degree, [&](size_t i) {
+                    real_weights[i] = weight::get_weight(weights[i]);
+                });
+
+                weight_prefix[vert_id].resize(degree + 1);
+                weight_prefix[vert_id][0] = 0;
+                for (size_t i = 0; i < degree; i++) {
+                    weight_prefix[vert_id][i + 1] = weight_prefix[vert_id][i] + real_weights[i];
+                }
+
+                return;
+            }
         private:
             FlatGraph2* snapshot;
             std::vector<std::vector<types::AliasTable>> alias_table;
             RandNum *seed;
-            std::vector<std::vector<std::vector<types::AliasTable>>> alias_table2;
-            std::vector<std::vector<types::Weight>> alias_prefix;
+            std::vector<std::vector<std::vector<types::AliasTable>>> alias_table2;    // for chunk sample
+            std::vector<std::vector<types::Weight>> alias_prefix;                     // for chunk sample
             types::Vertex chunckSize;
             // config::SamplerMethod *sampler_type;
+            std::vector<std::vector<types::Weight>> weight_prefix;                    // for its sample
+ 
     };
 }
 

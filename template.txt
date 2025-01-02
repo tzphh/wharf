@@ -18,3 +18,6 @@ int main() {
         DeepWalk& derived_model = dynamic_cast<DeepWalk&>(model); // 强制类型转换
         derived_model.update_snapshot(&graph);     
         model = derived_model;          // 更新model snapshot, TODO: bugfix gc
+
+
+rm -r build/ && mkdir build && cd build/ && cmake ..  && make -j 32
